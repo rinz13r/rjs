@@ -1,0 +1,201 @@
+extern crate ressa;
+use resast::prelude::*;
+use ressa::Parser;
+
+use crate::vm::code::*;
+use crate::vm::value;
+use crate::vm::value::{Number, Value};
+
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+struct CodeGen {
+    instrs: Vec<Instruction>,
+    consts: Vec<Value>,
+    names: Vec<String>,
+    index_of_name: HashMap<String, usize>,
+    index_of_param: HashMap<String, usize>,
+    is_func: bool,
+}
+
+impl CodeGen {
+    fn new(is_func: bool) -> Self {
+        CodeGen {
+            instrs: Vec::new(),
+            consts: Vec::new(),
+            names: Vec::new(),
+            index_of_name: HashMap::new(),
+            index_of_param: HashMap::new(),
+            is_func,
+        }
+    }
+    fn gen(src: String) -> Code {
+        let mut parser = Parser::new(src.as_str()).expect("Failed to create parser");
+        let program = parser.parse().expect("Unabl eto parse");
+        let mut codegen = CodeGen::new(false);
+        match program {
+            Program::Script(parts) => codegen.code(parts),
+            Program::Mod(_parts) => panic!("Modules not implemented"),
+        };
+        Code::new(codegen.instrs, codegen.consts, codegen.names)
+    }
+    fn code(&mut self, parts: Vec<ProgramPart>) {
+        for p in parts {
+            match p {
+                ProgramPart::Stmt(stmt) => self.visit_stmt(stmt),
+                ProgramPart::Decl(decl) => self.visit_decl(decl),
+                _ => panic!("Not impl"),
+            }
+        }
+    }
+    fn visit_stmt(&mut self, stmt: Stmt) {
+        match stmt {
+            Stmt::Empty => (),
+            Stmt::Expr(expr) => self.visit_expr(expr),
+            Stmt::Return(ret) => {
+                if let Some(expr) = ret {
+                    self.visit_expr(expr);
+                } else {
+                    self.instrs.push(Instruction::LoadUndefined);
+                }
+            }
+            _ => panic!("Unimplemented stmt, {:?}", stmt),
+        }
+    }
+    fn visit_decl(&mut self, decl: Decl) {
+        match decl {
+            Decl::Var(kind, decls) => {
+                if kind != VarKind::Var {
+                    panic!("Only 'var' decls supported");
+                }
+                for decl in decls {
+                    match decl {
+                        VarDecl { id, init } => {
+                            if let Some(init) = init {
+                                self.visit_expr(init);
+                            } else {
+                                self.instrs.push(Instruction::LoadUndefined);
+                            }
+                            if let Pat::Ident(ident) = id {
+                                let name = ident.name;
+                                self.instrs.push(Instruction::StoreName(
+                                    match self.index_of_name.get(&name.to_string()) {
+                                        Some(idx) => *idx,
+                                        None => {
+                                            self.names.push(name.to_string());
+                                            self.index_of_name
+                                                .insert(name.to_string(), self.names.len() - 1);
+                                            self.names.len() - 1
+                                        }
+                                    },
+                                ));
+                            } else {
+                                // TODO: Better error messages and handling, not just panic!
+                                panic!("unsupported construct");
+                            }
+                        }
+                    }
+                }
+            }
+
+            Decl::Func(Func {
+                id, params, body, ..
+            }) => {
+                let id = id.expect("function statement requires a name");
+                let mut codegen = Self::new(true);
+                for i in 0..params.len() {
+                    let ref param = params[i];
+                    if let FuncArg::Pat(pat) = param {
+                        if let Pat::Ident(ident) = pat {
+                            let ref name = ident.name;
+                            codegen.index_of_param.insert(name.to_string(), i);
+                        }
+                    }
+                }
+                codegen.visit_fnbody(body);
+                let code = Code::new(codegen.instrs, codegen.consts, codegen.names);
+                let obj = value::Object::new_function(Rc::from(code), params.len());
+                let val = value::Value::from_object(obj);
+                self.consts.push(val);
+                self.names.push(id.name.to_string());
+                self.instrs
+                    .push(Instruction::LoadConst(self.consts.len() - 1));
+                self.instrs
+                    .push(Instruction::StoreName(self.names.len() - 1));
+            }
+
+            _ => panic!("{:?} decl not supported", decl),
+        }
+    }
+    fn visit_fnbody(&mut self, body: FuncBody) {
+        self.code(body.0);
+    }
+    fn visit_expr(&mut self, expr: Expr) {
+        match expr {
+            Expr::Lit(lit) => match lit {
+                Lit::Null => self.instrs.push(Instruction::LoadNull),
+                Lit::Number(std::borrow::Cow::Borrowed(b)) => {
+                    self.consts
+                        .push(Value::from_f64(b.parse::<f64>().unwrap_or_default()));
+                    self.instrs
+                        .push(Instruction::LoadConst(self.consts.len() - 1));
+                }
+                Lit::Number(std::borrow::Cow::Owned(b)) => {
+                    self.consts
+                        .push(Value::from_f64(b.parse::<f64>().unwrap_or_default()));
+                    self.instrs
+                        .push(Instruction::LoadConst(self.consts.len() - 1));
+                }
+                _ => panic!("No support for expr yet"),
+            },
+            Expr::Binary(BinaryExpr {
+                operator,
+                left,
+                right,
+            }) => {
+                self.visit_expr(*left);
+                self.visit_expr(*right);
+                self.instrs.push(match operator {
+                    BinaryOp::Plus => Instruction::BinAdd,
+                    _ => panic!("operator '{:?}' not supported yet ", operator),
+                });
+            }
+            Expr::Call(CallExpr { callee, arguments }) => {
+                let len = arguments.len();
+                for arg in arguments {
+                    self.visit_expr(arg);
+                }
+                self.visit_expr(*callee);
+                self.instrs.push(Instruction::Call(len));
+            }
+            Expr::Ident(Ident { name }) => {
+                if self.is_func {
+                    match self.index_of_param.get(&name.to_string()) {
+                        Some(idx) => {
+                            self.instrs.push(Instruction::LoadArg(*idx));
+                            return;
+                        }
+                        None => (),
+                    }
+                }
+                self.instrs.push(Instruction::LoadName(
+                    match self.index_of_name.get(&name.to_string()) {
+                        Some(idx) => *idx,
+                        None => {
+                            self.names.push(name.to_string());
+                            self.index_of_name
+                                .insert(name.to_string(), self.names.len() - 1);
+                            self.names.len() - 1
+                        }
+                    },
+                ));
+            }
+            _ => panic!("Unimplemented"),
+        }
+    }
+}
+
+pub fn gen_code(src: String) -> Code {
+    CodeGen::gen(src)
+}
