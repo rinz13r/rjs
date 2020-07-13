@@ -1,18 +1,19 @@
 use crate::vm::code::*;
-use crate::vm::value;
 use crate::vm::value::*;
+use super::context::*;
+use crate::objects::*;
 
 extern crate gc;
-use gc::{Gc, GcCell};
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
-pub struct VM {
+pub struct VM <'a> {
     callstack: Vec<Frame>,
     global_scope: HashMap<String, Value>,
     scopes: Vec<HashMap<String, Value>>,
-    this: GcCell<Gc<Object>>,
+    ctx: &'a Context,
+    // this: GcBox<Object>,
 }
 
 struct Frame {
@@ -41,22 +42,21 @@ fn builtin_print(arguments: &Vec<Value>) -> JSResult {
     Ok(Value::Undefined)
 }
 
-impl VM {
-    pub fn new(code: Code) -> Self {
+impl<'a> VM<'a> {
+    pub fn new(code: Code, ctx: &'a Context) -> Self {
         let callstack = vec![Frame::new(Rc::from(code), 0)];
         Self::init_vm(VM {
             callstack,
             global_scope: HashMap::new(),
             scopes: Vec::new(),
-            this: GcCell::new(Gc::new(Object::new_regular_object(None))),
+            ctx
         })
     }
 
     fn init_vm(vm: Self) -> Self {
         let mut vm = vm;
-        let obj = Object::new_builtin_function(builtin_print);
-        let v = Value::from_object(obj);
-        vm.global_scope.insert("print".to_string(), v);
+        let print = Value::from_rjsfunc (builtin_print, "print");
+        vm.global_scope.insert("print".to_string(), print);
         vm
     }
 
@@ -95,45 +95,37 @@ impl VM {
                     _ => panic!("stack underflow during BinOp"),
                 },
                 Instruction::LoadConst(idx) => frm.datastack.push(match idx {
-                    n if *n < consts.len() => consts[*n].clone(),
+                    n if *n < consts.len() => consts[*n].clone (),
                     _ => panic!("const cannot be indexed"),
                 }),
                 Instruction::Call(nargs) => {
-                    if let Some(callee) = frm.datastack.pop() {
-                        match &callee {
-                            Value::Object(o) => {
-                                let mut arguments = Vec::new();
-                                for _ in 0..*nargs {
-                                    if let Some(v) = frm.datastack.pop() {
-                                        arguments.push(v);
-                                    }
-                                }
-
-                                let res = o.borrow().call(self, &arguments);
-                                if let Some(frm) = Self::vec_back(&mut self.callstack) {
-                                    match res {
-                                        Ok(val) => frm.datastack.push(val),
-                                        Err(msg) => panic!(msg),
-                                    }
-                                };
-                            }
-                            _ => panic!("Not callable"),
+                    let v = frm.datastack.pop ().unwrap ();
+                    let mut arguments = Vec::new();
+                    for _ in 0..*nargs {
+                        if let Some(v) = frm.datastack.pop() {
+                            arguments.push(v);
                         }
                     }
+                    let res = v.call (self, &arguments);
+                    if let Some(frm) = Self::vec_back(&mut self.callstack) {
+                        match res {
+                            Ok(val) => frm.datastack.push(val),
+                            Err(msg) => panic!(msg),
+                        }
+                    };
                 }
                 Instruction::LoadName(idx) => {
                     let ref name = frm.code.names[*idx];
                     let mut found = false;
                     if let Some(scope) = Self::vec_back(&mut self.scopes) {
                         if let Some(v) = scope.get(name) {
-                            frm.datastack.push(v.clone());
+                            frm.datastack.push(v.clone ());
                             found = true;
                         }
                     }
                     if !found {
                         if let Some(v) = self.global_scope.get(name) {
-                            frm.datastack.push(v.clone());
-                            ()
+                            frm.datastack.push(v.clone ());
                         } else {
                             panic!("NameError: '{}' not found", name);
                         }
@@ -149,34 +141,20 @@ impl VM {
                     }
                 }
                 Instruction::LoadArg(idx) => {
-                    frm.datastack.push(frm.datastack[*idx].clone());
+                    frm.datastack.push(frm.datastack[*idx].clone ());
                 }
-                Instruction::New(nargs) => {
-                    let f = frm.datastack.pop().unwrap();
-                    let mut args = Vec::new();
-                    for _ in 0..*nargs {
-                        args.push(frm.datastack.pop().unwrap());
-                    }
-                    let prev_this = self.this.clone();
-                    self.this = GcCell::new(Gc::new(Object::new_regular_object(Some(f.clone()))));
-                    match f.spawn(self, &args) {
-                        Ok(_) => Self::vec_back(&mut self.callstack)
-                            .unwrap()
-                            .datastack
-                            .push(Value::from_gcobject(self.this.clone())),
-                        Err(msg) => panic!(msg),
-                    };
-                    self.this = prev_this;
+                Instruction::New(_nargs) => {
+                    // TODO
                 }
             }
         }
-        Ok(Value::Undefined)
+        Ok(Value::Undefined) // Default return value of a frame
     }
 
     pub fn call_code(&mut self, code: Rc<Code>, arity: usize, args: &Vec<Value>) -> JSResult {
         let mut frm = Frame::new(code, arity);
         for arg in args {
-            frm.datastack.push(arg.clone());
+            frm.datastack.push(arg.clone ());
         }
         for _ in args.len()..arity {
             frm.datastack.push(Value::Undefined);

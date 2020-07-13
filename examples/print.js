@@ -4,8 +4,8 @@ var a = print (a);
 print (a);
 print (b);
 
-function f (x, y) {
-    print (x, y)
+function f (a, b) {
+    print (a, b);
 }
 
-f (a, b);
+f (1, 2);

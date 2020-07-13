@@ -14,6 +14,7 @@ pub enum Instruction {
     New(usize),
 }
 
+#[derive(Debug)]
 pub struct Code {
     pub instrs: Vec<Instruction>,
     pub consts: Vec<Value>,

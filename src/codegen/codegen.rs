@@ -3,6 +3,7 @@ use resast::prelude::*;
 use ressa::Parser;
 
 use crate::vm::code::*;
+use crate::vm::context::Context;
 use crate::vm::value;
 use crate::vm::value::{Number, Value};
 
@@ -10,17 +11,18 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-struct CodeGen {
+struct CodeGen<'a> {
     instrs: Vec<Instruction>,
     consts: Vec<Value>,
     names: Vec<String>,
     index_of_name: HashMap<String, usize>,
     index_of_param: HashMap<String, usize>,
     is_func: bool,
+    ctx: &'a Context
 }
 
-impl CodeGen {
-    fn new(is_func: bool) -> Self {
+impl<'a> CodeGen<'a> {
+    fn new (is_func: bool, ctx: &'a Context) -> Self {
         CodeGen {
             instrs: Vec::new(),
             consts: Vec::new(),
@@ -28,12 +30,13 @@ impl CodeGen {
             index_of_name: HashMap::new(),
             index_of_param: HashMap::new(),
             is_func,
+            ctx
         }
     }
-    fn gen(src: String) -> Code {
+    fn gen(src: String, ctx: &'a Context) -> Code {
         let mut parser = Parser::new(src.as_str()).expect("Failed to create parser");
         let program = parser.parse().expect("Unabl eto parse");
-        let mut codegen = CodeGen::new(false);
+        let mut codegen = CodeGen::new(false, ctx);
         match program {
             Program::Script(parts) => codegen.code(parts),
             Program::Mod(_parts) => panic!("Modules not implemented"),
@@ -103,7 +106,7 @@ impl CodeGen {
                 id, params, body, ..
             }) => {
                 let id = id.expect("function statement requires a name");
-                let mut codegen = Self::new(true);
+                let mut codegen = Self::new(true, self.ctx);
                 for i in 0..params.len() {
                     let ref param = params[i];
                     if let FuncArg::Pat(pat) = param {
@@ -115,8 +118,8 @@ impl CodeGen {
                 }
                 codegen.visit_fnbody(body);
                 let code = Code::new(codegen.instrs, codegen.consts, codegen.names);
-                let obj = value::Object::new_function(Rc::from(code), params.len());
-                let val = value::Value::from_object(obj);
+                // let obj = value::Value::new_function(Rc::from(code), params.len());
+                let val = value::Value::new_functionobject (self.ctx, Rc::from (code), params.len ());
                 self.consts.push(val);
                 self.names.push(id.name.to_string());
                 self.instrs
@@ -196,6 +199,6 @@ impl CodeGen {
     }
 }
 
-pub fn gen_code(src: String) -> Code {
-    CodeGen::gen(src)
+pub fn gen_code <'a> (src: String, ctx: &'a Context) -> Code {
+    CodeGen::gen(src, ctx)
 }

@@ -1,80 +1,18 @@
+use crate::objects::*;
+use crate::vm::context::Context;
 use crate::vm::code::Code;
-use crate::vm::payload::*;
+use gc::{Gc, GcCell, Finalize, Trace};
 use crate::vm::vm::VM;
-
-extern crate gc;
-use gc::{Finalize, Gc, GcCell, Trace};
-
 use std::rc::Rc;
 
-#[derive(Clone, Trace, Finalize, Debug)]
+#[derive(Trace, Finalize, Clone, Debug)]
 pub enum Value {
     Null,
     Undefined,
     Number(Number),
     Boolean(bool),
     String(String),
-    Object(GcCell<Gc<Object>>),
-}
-
-pub type JSResult = Result<Value, &'static str>;
-
-#[derive(Trace, Finalize, Debug)]
-struct Property {
-    val: Value,
-}
-
-#[derive(Trace, Finalize, Debug)]
-pub struct Object {
-    prototype: Option<GcCell<Gc<Object>>>,
-    payload: ObjectPayload,
-}
-
-impl Object {
-    pub fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
-        match &self.payload {
-            ObjectPayload::BuiltInFunction(BuiltInFunction { func }) => func(args),
-            ObjectPayload::Function(func) => vm.call_code(func.code.clone(), func.arity, args),
-            _ => Err("object not callable"),
-        }
-    }
-    pub fn new_builtin_function(func: JSRustFunc) -> Object {
-        Object {
-            prototype: None,
-            payload: ObjectPayload::BuiltInFunction(BuiltInFunction { func }),
-        }
-    }
-    pub fn new_function(code: Rc<Code>, arity: usize) -> Object {
-        Object {
-            prototype: None,
-            payload: ObjectPayload::Function(Function { code, arity }),
-        }
-    }
-    pub fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
-        match &self.payload {
-            ObjectPayload::Function(f) => f.spawn(vm, args),
-            _ => Err("New cannot be called"),
-        }
-    }
-    pub fn new_regular_object(prototype: Option<Value>) -> Self {
-        Object {
-            prototype: if let Some(prototype) = prototype {
-                match &prototype {
-                    Value::Object(o) => Some(o.clone()),
-                    _ => None,
-                }
-            } else {
-                None
-            },
-            payload: ObjectPayload::RegularObject(RegularObject::new()),
-        }
-    }
-}
-
-impl std::fmt::Debug for ObjectPayload {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ObjectPayLoad")
-    }
+    Object(GcBox<Object>),
 }
 
 #[derive(Clone, Trace, Finalize, Debug)]
@@ -96,7 +34,7 @@ impl Value {
     fn to_boolean(&self) -> Value {
         match self {
             Value::Undefined | Value::Null => Value::Boolean(false),
-            Value::Boolean(_) => self.clone(),
+            Value::Boolean(_) => self.clone (),
             Value::Number(n) => match n {
                 Number::NaN | Number::IaN(0.) => Value::Boolean(false),
                 _ => Value::Boolean(true),
@@ -109,7 +47,7 @@ impl Value {
         match self {
             Value::Undefined => Value::Number(Number::NaN),
             Value::Null => Value::Number(Number::IaN(0.)),
-            Value::Number(_) => self.clone(),
+            Value::Number(_) => self.clone (),
             Value::Boolean(b) => Value::Number(Number::IaN(if *b { 1. } else { 0. })),
             // TODO: impl the spec
             Value::String(s) => Value::Number(Number::IaN(s.parse::<f64>().unwrap_or_default())),
@@ -163,9 +101,6 @@ impl std::ops::Add for Value {
 }
 
 impl Value {
-    pub fn from_object(o: Object) -> Self {
-        Value::Object(GcCell::new(Gc::new(o)))
-    }
     pub fn from_f64(f: f64) -> Self {
         Value::Number(if f.is_nan() {
             Number::NaN
@@ -173,13 +108,31 @@ impl Value {
             Number::IaN(f)
         })
     }
-    pub fn from_gcobject(obj: GcCell<Gc<Object>>) -> Self {
-        Value::Object(obj)
+    pub fn from_rjsfunc (func: RJSFunc, name: &'static str) -> Self {
+        Value::Object (Gc::new (GcCell::new (Object::from_rjsfunc (func, name))))
     }
-    pub fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+    pub fn new_functionobject (ctx: &Context, code: Rc<Code>, len: usize) -> Self {
+        Value::Object (Gc::new (GcCell::new (Object::new_functionobject (ctx, code, len))))
+    }
+}
+
+impl Objectable for Value {
+    fn get (&self, prop: &String) -> Value {
         match self {
-            Value::Object(o) => o.borrow().spawn(vm, args), // o.spawn (vm, args),
-            _ => Err("Cannot call New on primitive data"),
+            Value::Object (o) => o.borrow ().get (prop),
+            _ => Value::Undefined
+        }
+    }
+    fn put (&mut self, prop: &String, val: Value) {
+        match self {
+            Value::Object (o) => o.borrow_mut ().put (prop, val),
+            _ => ()
+        }
+    }
+    fn call (&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+        match self {
+            Value::Object (o) => o.borrow ().call (vm, args),
+            _ => Err ("object not callable")
         }
     }
 }
