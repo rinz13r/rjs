@@ -1,14 +1,14 @@
-use crate::vm::code::*;
-use crate::vm::value::*;
 use super::context::*;
 use crate::objects::*;
+use crate::vm::code::*;
+use crate::vm::value::*;
 
 extern crate gc;
 
 use std::collections::HashMap;
 use std::rc::Rc;
 
-pub struct VM <'a> {
+pub struct VM<'a> {
     callstack: Vec<Frame>,
     global_scope: HashMap<String, Value>,
     scopes: Vec<HashMap<String, Value>>,
@@ -34,9 +34,12 @@ impl Frame {
     }
 }
 
-fn builtin_print(arguments: &Vec<Value>) -> JSResult {
+fn builtin_print(vm: &mut VM, arguments: &Vec<Value>) -> JSResult {
     for arg in arguments {
-        print!("{} ", arg);
+        match arg.toString(vm) {
+            Ok(s) => print!("{} ", s),
+            Err(msg) => return Err(msg),
+        }
     }
     println!();
     Ok(Value::Undefined)
@@ -49,13 +52,13 @@ impl<'a> VM<'a> {
             callstack,
             global_scope: HashMap::new(),
             scopes: Vec::new(),
-            ctx
+            ctx,
         })
     }
 
     fn init_vm(vm: Self) -> Self {
         let mut vm = vm;
-        let print = Value::from_rjsfunc (builtin_print, "print");
+        let print = Value::from_rjsfunc(builtin_print, "print");
         vm.global_scope.insert("print".to_string(), print);
         vm
     }
@@ -65,6 +68,13 @@ impl<'a> VM<'a> {
         match v.len() {
             0 => None,
             n => Some(&mut v[n - 1]),
+        }
+    }
+    #[inline(always)]
+    fn vec_back_ref<T>(v: &Vec<T>) -> Option<&T> {
+        match v.len() {
+            0 => None,
+            n => Some(&v[n - 1]),
         }
     }
     // TODO: return Result to indicate success or uncaught expcetion
@@ -81,6 +91,7 @@ impl<'a> VM<'a> {
                 return Ok(Value::Undefined);
             }
             let ref consts = frm.code.consts;
+            let ref names = frm.code.names;
             let ref instr = instrs[frm.ip];
             frm.ip += 1;
             match instr {
@@ -95,18 +106,18 @@ impl<'a> VM<'a> {
                     _ => panic!("stack underflow during BinOp"),
                 },
                 Instruction::LoadConst(idx) => frm.datastack.push(match idx {
-                    n if *n < consts.len() => consts[*n].clone (),
+                    n if *n < consts.len() => consts[*n].clone(),
                     _ => panic!("const cannot be indexed"),
                 }),
                 Instruction::Call(nargs) => {
-                    let v = frm.datastack.pop ().unwrap ();
+                    let v = frm.datastack.pop().unwrap();
                     let mut arguments = Vec::new();
                     for _ in 0..*nargs {
                         if let Some(v) = frm.datastack.pop() {
                             arguments.push(v);
                         }
                     }
-                    let res = v.call (self, &arguments);
+                    let res = v.call(self, &arguments);
                     if let Some(frm) = Self::vec_back(&mut self.callstack) {
                         match res {
                             Ok(val) => frm.datastack.push(val),
@@ -119,13 +130,13 @@ impl<'a> VM<'a> {
                     let mut found = false;
                     if let Some(scope) = Self::vec_back(&mut self.scopes) {
                         if let Some(v) = scope.get(name) {
-                            frm.datastack.push(v.clone ());
+                            frm.datastack.push(v.clone());
                             found = true;
                         }
                     }
                     if !found {
                         if let Some(v) = self.global_scope.get(name) {
-                            frm.datastack.push(v.clone ());
+                            frm.datastack.push(v.clone());
                         } else {
                             panic!("NameError: '{}' not found", name);
                         }
@@ -141,10 +152,29 @@ impl<'a> VM<'a> {
                     }
                 }
                 Instruction::LoadArg(idx) => {
-                    frm.datastack.push(frm.datastack[*idx].clone ());
+                    frm.datastack.push(frm.datastack[*idx].clone());
                 }
                 Instruction::New(_nargs) => {
                     // TODO
+                }
+                Instruction::LoadProperty => {
+                    let prop = frm
+                        .datastack
+                        .pop()
+                        .expect("data stack underflow")
+                        .to_string();
+                    let v = frm.datastack.pop().expect("data stack underflow");
+                    frm.datastack.push(v.get(&prop));
+                }
+                Instruction::StoreProperty => {
+                    let prop = frm
+                        .datastack
+                        .pop()
+                        .expect("data stack underflow")
+                        .to_string();
+                    let mut lhs = frm.datastack.pop().expect("data stack underflow");
+                    let rhs = frm.datastack.pop().expect("data stack underflow");
+                    lhs.put(&prop, rhs);
                 }
             }
         }
@@ -154,7 +184,7 @@ impl<'a> VM<'a> {
     pub fn call_code(&mut self, code: Rc<Code>, arity: usize, args: &Vec<Value>) -> JSResult {
         let mut frm = Frame::new(code, arity);
         for arg in args {
-            frm.datastack.push(arg.clone ());
+            frm.datastack.push(arg.clone());
         }
         for _ in args.len()..arity {
             frm.datastack.push(Value::Undefined);

@@ -1,8 +1,8 @@
 use crate::objects::*;
-use crate::vm::context::Context;
 use crate::vm::code::Code;
-use gc::{Gc, GcCell, Finalize, Trace};
+use crate::vm::context::Context;
 use crate::vm::vm::VM;
+use gc::{Finalize, Gc, GcCell, Trace};
 use std::rc::Rc;
 
 #[derive(Trace, Finalize, Clone, Debug)]
@@ -34,7 +34,7 @@ impl Value {
     fn to_boolean(&self) -> Value {
         match self {
             Value::Undefined | Value::Null => Value::Boolean(false),
-            Value::Boolean(_) => self.clone (),
+            Value::Boolean(_) => self.clone(),
             Value::Number(n) => match n {
                 Number::NaN | Number::IaN(0.) => Value::Boolean(false),
                 _ => Value::Boolean(true),
@@ -47,7 +47,7 @@ impl Value {
         match self {
             Value::Undefined => Value::Number(Number::NaN),
             Value::Null => Value::Number(Number::IaN(0.)),
-            Value::Number(_) => self.clone (),
+            Value::Number(_) => self.clone(),
             Value::Boolean(b) => Value::Number(Number::IaN(if *b { 1. } else { 0. })),
             // TODO: impl the spec
             Value::String(s) => Value::Number(Number::IaN(s.parse::<f64>().unwrap_or_default())),
@@ -108,31 +108,41 @@ impl Value {
             Number::IaN(f)
         })
     }
-    pub fn from_rjsfunc (func: RJSFunc, name: &'static str) -> Self {
-        Value::Object (Gc::new (GcCell::new (Object::from_rjsfunc (func, name))))
+    pub fn from_rjsfunc(func: RJSFunc, name: &'static str) -> Self {
+        Value::Object(Gc::new(GcCell::new(Object::from_rjsfunc(func, name))))
     }
-    pub fn new_functionobject (ctx: &Context, code: Rc<Code>, len: usize) -> Self {
-        Value::Object (Gc::new (GcCell::new (Object::new_functionobject (ctx, code, len))))
+    pub fn new_functionobject(ctx: &Context, code: Rc<Code>, len: usize) -> Self {
+        Value::Object(Gc::new(GcCell::new(Object::new_functionobject(
+            ctx, code, len,
+        ))))
     }
 }
 
 impl Objectable for Value {
-    fn get (&self, prop: &String) -> Value {
+    fn get(&self, prop: &String) -> Value {
         match self {
-            Value::Object (o) => o.borrow ().get (prop),
-            _ => Value::Undefined
+            Value::Object(o) => o.borrow().get(prop),
+            _ => Value::Undefined,
         }
     }
-    fn put (&mut self, prop: &String, val: Value) {
+    fn put(&mut self, prop: &String, val: Value) {
         match self {
-            Value::Object (o) => o.borrow_mut ().put (prop, val),
-            _ => ()
+            Value::Object(o) => o.borrow_mut().put(prop, val),
+            _ => {
+                println!("somethign else");
+            }
         }
     }
-    fn call (&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+    fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
         match self {
-            Value::Object (o) => o.borrow ().call (vm, args),
-            _ => Err ("object not callable")
+            Value::Object(o) => o.borrow().call(vm, args),
+            _ => Err("object not callable"),
+        }
+    }
+    fn toString(&self, vm: &mut VM) -> JSResult {
+        match &self {
+            Value::Object(o) => o.borrow().toString(vm),
+            _ => Ok(self.to_string()),
         }
     }
 }

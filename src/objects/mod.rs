@@ -1,69 +1,100 @@
-pub mod proto;
-pub mod array;
-pub mod primfunc;
-pub mod function;
+#![allow(non_snake_case)]
 
-use gc::{Gc, GcCell, Trace, Finalize};
+pub mod array;
+pub mod function;
+pub mod primfunc;
+pub mod proto;
+pub mod regobject;
+
+use crate::vm::code::Code;
+use crate::vm::context::Context;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
-use crate::vm::context::Context;
-use crate::vm::code::Code;
+use gc::{Finalize, Gc, GcCell, Trace};
 use std::rc::Rc;
 
 pub type GcBox<T> = Gc<GcCell<T>>;
 pub type JSDict = std::collections::HashMap<String, Value>;
 // TODO: Update after adding Error object
 pub type JSResult = Result<Value, &'static str>;
-pub type RJSFunc = fn (&Vec<Value>) -> JSResult;
+pub type RJSFunc = fn(&mut VM, &Vec<Value>) -> JSResult;
 
 pub trait Objectable {
-    fn get (&self, prop: &String) -> Value;
-    fn put (&mut self, prop: &String, val: Value) {}
-    fn call (&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
-        Err ("Object not callable")
+    fn get(&self, prop: &String) -> Value;
+    fn put(&mut self, prop: &String, val: Value) {}
+    fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+        Err("Object not callable")
     }
+    // TODO: Override
+    fn toString(&self, _vm: &mut VM) -> JSResult {
+        Ok(Value::String(String::from("[object Object]")))
+    }
+}
+
+pub enum DefaultValueHint {
+    String,
+    Number,
+}
+
+pub trait DefaultOperations {
+    fn toString(&self) -> Value; // return Value::String
+    fn valueOf(&self) -> Value;
+    fn defaultValue(&self, hint: DefaultValueHint) -> Value;
 }
 
 #[derive(Trace, Finalize, Debug)]
 pub enum Object {
-    ArrayObject (array::ArrayObject),
-    ProtoObject (proto::ProtoObject),
-    PrimFunction (primfunc::PrimFunction),
-    FunctionObject (function::FunctionObject),
+    ArrayObject(array::ArrayObject),
+    ProtoObject(proto::ProtoObject),
+    PrimFunction(primfunc::PrimFunction),
+    FunctionObject(function::FunctionObject),
 }
 
 impl Object {
-    pub fn from_rjsfunc (func: RJSFunc, name: &'static str) -> Self {
-        Object::PrimFunction (primfunc::PrimFunction::new (func, name))
+    pub fn from_rjsfunc(func: RJSFunc, name: &'static str) -> Self {
+        Object::PrimFunction(primfunc::PrimFunction::new(func, name))
     }
-    pub fn new_functionobject (ctx: &Context, code: Rc<Code>, length: usize) -> Self {
-        Object::FunctionObject(function::FunctionObject::new (ctx, code, length, &String::from ("func")))
+    pub fn new_functionobject(ctx: &Context, code: Rc<Code>, length: usize) -> Self {
+        Object::FunctionObject(function::FunctionObject::new(
+            ctx,
+            code,
+            length,
+            &String::from("func"),
+        ))
     }
 }
 
 impl Objectable for Object {
-    fn get (&self, prop: &String) -> Value {
+    fn get(&self, prop: &String) -> Value {
         match self {
-            Object::ArrayObject (o) => o.get (prop),
-            Object::ProtoObject (o) => o.get (prop),
-            Object::PrimFunction(o) => o.get (prop),
-            Object::FunctionObject(o) => o.get (prop),
+            Object::ArrayObject(o) => o.get(prop),
+            Object::ProtoObject(o) => o.get(prop),
+            Object::PrimFunction(o) => o.get(prop),
+            Object::FunctionObject(o) => o.get(prop),
         }
     }
-    fn put (&mut self, prop: &String, val: Value) {
+    fn put(&mut self, prop: &String, val: Value) {
         match self {
-            Object::ArrayObject (o) => o.put (prop, val), 
-            Object::ProtoObject (o) => o.put (prop, val), 
-            Object::PrimFunction(o) => o.put (prop, val), 
-            Object::FunctionObject(o) => o.put (prop, val),
+            Object::ArrayObject(o) => o.put(prop, val),
+            Object::ProtoObject(o) => o.put(prop, val),
+            Object::PrimFunction(o) => o.put(prop, val),
+            Object::FunctionObject(o) => o.put(prop, val),
         }
     }
-    fn call (&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+    fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
         match self {
-            Object::ArrayObject (o) => o.call (vm, args), 
-            Object::ProtoObject (o) => o.call (vm, args), 
-            Object::PrimFunction(o) => o.call (vm, args), 
-            Object::FunctionObject(o) => o.call (vm, args),
+            Object::ArrayObject(o) => o.call(vm, args),
+            Object::ProtoObject(o) => o.call(vm, args),
+            Object::PrimFunction(o) => o.call(vm, args),
+            Object::FunctionObject(o) => o.call(vm, args),
+        }
+    }
+    fn toString(&self, vm: &mut VM) -> JSResult {
+        match self {
+            Object::ArrayObject(o) => o.toString(vm),
+            Object::ProtoObject(o) => o.toString(vm),
+            Object::PrimFunction(o) => o.toString(vm),
+            Object::FunctionObject(o) => o.toString(vm),
         }
     }
 }

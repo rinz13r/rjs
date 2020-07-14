@@ -12,6 +12,8 @@ pub enum Instruction {
     StoreName(usize),
     LoadArg(usize),
     New(usize),
+    LoadProperty,
+    StoreProperty,
 }
 
 #[derive(Debug)]

@@ -18,11 +18,12 @@ struct CodeGen<'a> {
     index_of_name: HashMap<String, usize>,
     index_of_param: HashMap<String, usize>,
     is_func: bool,
-    ctx: &'a Context
+    in_load_prop: bool,
+    ctx: &'a Context,
 }
 
 impl<'a> CodeGen<'a> {
-    fn new (is_func: bool, ctx: &'a Context) -> Self {
+    fn new(is_func: bool, ctx: &'a Context) -> Self {
         CodeGen {
             instrs: Vec::new(),
             consts: Vec::new(),
@@ -30,7 +31,8 @@ impl<'a> CodeGen<'a> {
             index_of_name: HashMap::new(),
             index_of_param: HashMap::new(),
             is_func,
-            ctx
+            in_load_prop: false,
+            ctx,
         }
     }
     fn gen(src: String, ctx: &'a Context) -> Code {
@@ -119,7 +121,7 @@ impl<'a> CodeGen<'a> {
                 codegen.visit_fnbody(body);
                 let code = Code::new(codegen.instrs, codegen.consts, codegen.names);
                 // let obj = value::Value::new_function(Rc::from(code), params.len());
-                let val = value::Value::new_functionobject (self.ctx, Rc::from (code), params.len ());
+                let val = value::Value::new_functionobject(self.ctx, Rc::from(code), params.len());
                 self.consts.push(val);
                 self.names.push(id.name.to_string());
                 self.instrs
@@ -150,7 +152,13 @@ impl<'a> CodeGen<'a> {
                     self.instrs
                         .push(Instruction::LoadConst(self.consts.len() - 1));
                 }
-                _ => panic!("No support for expr yet"),
+                Lit::String(StringLit::Double(std::borrow::Cow::Owned(b))) => {
+                    self.consts.push(Value::String(b.to_string()));
+                }
+                Lit::String(StringLit::Double(std::borrow::Cow::Borrowed(b))) => {
+                    self.consts.push(Value::String(b.to_string()));
+                }
+                _ => panic!("No support for expr: {:?} yet", lit),
             },
             Expr::Binary(BinaryExpr {
                 operator,
@@ -173,6 +181,12 @@ impl<'a> CodeGen<'a> {
                 self.instrs.push(Instruction::Call(len));
             }
             Expr::Ident(Ident { name }) => {
+                if self.in_load_prop {
+                    self.consts.push(Value::String(String::from(name)));
+                    self.instrs
+                        .push(Instruction::LoadConst(self.consts.len() - 1));
+                    return;
+                }
                 if self.is_func {
                     match self.index_of_param.get(&name.to_string()) {
                         Some(idx) => {
@@ -194,11 +208,54 @@ impl<'a> CodeGen<'a> {
                     },
                 ));
             }
-            _ => panic!("Unimplemented"),
+            Expr::Member(MemberExpr {
+                object,
+                property,
+                computed,
+            }) => {
+                self.visit_expr(*object);
+                let prev = self.in_load_prop;
+                self.in_load_prop = true;
+                self.visit_expr(*property);
+                self.instrs.push(Instruction::LoadProperty);
+                self.in_load_prop = prev;
+            }
+            Expr::Assign(AssignExpr {
+                left,
+                right,
+                operator,
+            }) => {
+                if operator != AssignOp::Equal {
+                    panic!("Operator {:?} not supported", operator);
+                }
+                self.visit_expr(*right);
+                match left {
+                    AssignLeft::Expr(expr) => self.visit_expr(*expr),
+                    AssignLeft::Pat(pat) => self.visit_pat(pat),
+                }
+                let instr = match self.instrs.pop() {
+                    None => panic!("Couldn't compute instr"),
+                    Some(instr) => match instr {
+                        Instruction::LoadProperty => Instruction::StoreProperty,
+                        _ => instr,
+                    },
+                };
+                self.instrs.push(instr);
+            }
+            _ => panic!("Unimplemented {:?}", expr),
+        }
+    }
+    fn visit_pat(&mut self, pat: Pat) {
+        panic!("pat");
+    }
+    fn vec_back_ref<T>(vec: &Vec<T>) -> Option<&T> {
+        match vec.len() {
+            0 => None,
+            n => Some(&vec[n - 1]),
         }
     }
 }
 
-pub fn gen_code <'a> (src: String, ctx: &'a Context) -> Code {
+pub fn gen_code<'a>(src: String, ctx: &'a Context) -> Code {
     CodeGen::gen(src, ctx)
 }
