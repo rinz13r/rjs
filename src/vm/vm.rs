@@ -14,6 +14,7 @@ pub struct VM<'a> {
     scopes: Vec<HashMap<String, Value>>,
     ctx: &'a Context,
     // this: GcBox<Object>,
+    thises: Vec<Value>,
 }
 
 struct Frame {
@@ -53,6 +54,7 @@ impl<'a> VM<'a> {
             global_scope: HashMap::new(),
             scopes: Vec::new(),
             ctx,
+            thises: Vec::new(),
         })
     }
 
@@ -111,11 +113,9 @@ impl<'a> VM<'a> {
                 }),
                 Instruction::Call(nargs) => {
                     let v = frm.datastack.pop().unwrap();
-                    let mut arguments = Vec::new();
+                    let arguments = Vec::from(&frm.datastack[frm.datastack.len() - nargs..]);
                     for _ in 0..*nargs {
-                        if let Some(v) = frm.datastack.pop() {
-                            arguments.push(v);
-                        }
+                        frm.datastack.pop().expect("datastack underflow");
                     }
                     let res = v.call(self, &arguments);
                     if let Some(frm) = Self::vec_back(&mut self.callstack) {
@@ -154,8 +154,20 @@ impl<'a> VM<'a> {
                 Instruction::LoadArg(idx) => {
                     frm.datastack.push(frm.datastack[*idx].clone());
                 }
-                Instruction::New(_nargs) => {
-                    // TODO
+                Instruction::New(nargs) => {
+                    let f = frm.datastack.pop().expect("datastack underflow");
+                    let args = Vec::from(&frm.datastack[frm.datastack.len() - nargs..]);
+                    for _ in 0..*nargs {
+                        frm.datastack.pop().expect("data stack underflow");
+                        // args.push (frm.datastack.pop().expect ("data stack underflow").clone ());
+                    }
+                    let res = f.spawn(self, &args);
+                    if let Some(frm) = Self::vec_back(&mut self.callstack) {
+                        match res {
+                            Ok(val) => frm.datastack.push(val),
+                            Err(msg) => panic!(msg),
+                        }
+                    };
                 }
                 Instruction::LoadProperty => {
                     let prop = frm
@@ -176,6 +188,15 @@ impl<'a> VM<'a> {
                     let rhs = frm.datastack.pop().expect("data stack underflow");
                     lhs.put(&prop, rhs);
                 }
+                Instruction::LoadThis => {
+                    frm.datastack.push(match Self::vec_back_ref(&self.thises) {
+                        Some(v) => {
+                            // dbg! (v);
+                            v.clone()
+                        }
+                        None => panic!("failed to load this"),
+                    });
+                }
             }
         }
         Ok(Value::Undefined) // Default return value of a frame
@@ -191,5 +212,16 @@ impl<'a> VM<'a> {
         }
         self.callstack.push(frm);
         self.exec_top_frame()
+    }
+    pub fn push_this(&mut self) -> Value {
+        let this = Value::new_regobject();
+        self.thises.push(this.clone());
+        this
+    }
+    pub fn pop_this(&mut self) -> Value {
+        match self.thises.pop() {
+            Some(v) => v.clone(),
+            None => panic!("this underflow"),
+        }
     }
 }

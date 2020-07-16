@@ -39,4 +39,12 @@ impl Objectable for FunctionObject {
     fn put(&mut self, prop: &String, val: Value) {
         self.dict.insert(prop.clone(), val);
     }
+    fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+        vm.push_this();
+        match self.call(vm, args) {
+            Ok(_) => (),
+            Err(msg) => return Err(msg),
+        }
+        Ok(vm.pop_this())
+    }
 }

@@ -29,6 +29,12 @@ pub trait Objectable {
     fn toString(&self, _vm: &mut VM) -> JSResult {
         Ok(Value::String(String::from("[object Object]")))
     }
+    fn tcall(&self, vm: &mut VM, args: &[Value]) -> JSResult {
+        Err("object not calalble")
+    }
+    fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+        Err("Not constructible")
+    }
 }
 
 pub enum DefaultValueHint {
@@ -48,6 +54,7 @@ pub enum Object {
     ProtoObject(proto::ProtoObject),
     PrimFunction(primfunc::PrimFunction),
     FunctionObject(function::FunctionObject),
+    RegObject(regobject::RegObject),
 }
 
 impl Object {
@@ -62,6 +69,9 @@ impl Object {
             &String::from("func"),
         ))
     }
+    pub fn new_regobject() -> Self {
+        Object::RegObject(regobject::RegObject::new())
+    }
 }
 
 impl Objectable for Object {
@@ -71,6 +81,7 @@ impl Objectable for Object {
             Object::ProtoObject(o) => o.get(prop),
             Object::PrimFunction(o) => o.get(prop),
             Object::FunctionObject(o) => o.get(prop),
+            Object::RegObject(o) => o.get(prop),
         }
     }
     fn put(&mut self, prop: &String, val: Value) {
@@ -79,6 +90,7 @@ impl Objectable for Object {
             Object::ProtoObject(o) => o.put(prop, val),
             Object::PrimFunction(o) => o.put(prop, val),
             Object::FunctionObject(o) => o.put(prop, val),
+            Object::RegObject(o) => o.put(prop, val),
         }
     }
     fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
@@ -87,6 +99,16 @@ impl Objectable for Object {
             Object::ProtoObject(o) => o.call(vm, args),
             Object::PrimFunction(o) => o.call(vm, args),
             Object::FunctionObject(o) => o.call(vm, args),
+            Object::RegObject(o) => o.call(vm, args),
+        }
+    }
+    fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+        match self {
+            Object::ArrayObject(o) => o.spawn(vm, args),
+            Object::ProtoObject(o) => o.spawn(vm, args),
+            Object::PrimFunction(o) => o.spawn(vm, args),
+            Object::FunctionObject(o) => o.spawn(vm, args),
+            Object::RegObject(o) => o.spawn(vm, args),
         }
     }
     fn toString(&self, vm: &mut VM) -> JSResult {
@@ -95,6 +117,7 @@ impl Objectable for Object {
             Object::ProtoObject(o) => o.toString(vm),
             Object::PrimFunction(o) => o.toString(vm),
             Object::FunctionObject(o) => o.toString(vm),
+            Object::RegObject(o) => o.toString(vm),
         }
     }
 }

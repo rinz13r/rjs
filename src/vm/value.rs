@@ -116,6 +116,9 @@ impl Value {
             ctx, code, len,
         ))))
     }
+    pub fn new_regobject() -> Self {
+        Value::Object(Gc::new(GcCell::new(Object::new_regobject())))
+    }
 }
 
 impl Objectable for Value {
@@ -129,7 +132,7 @@ impl Objectable for Value {
         match self {
             Value::Object(o) => o.borrow_mut().put(prop, val),
             _ => {
-                println!("somethign else");
+                panic!("'put' expected object. Received: {}", val);
             }
         }
     }
@@ -137,6 +140,12 @@ impl Objectable for Value {
         match self {
             Value::Object(o) => o.borrow().call(vm, args),
             _ => Err("object not callable"),
+        }
+    }
+    fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+        match self {
+            Value::Object(o) => o.borrow().spawn(vm, args),
+            _ => Err("object not constructible"),
         }
     }
     fn toString(&self, vm: &mut VM) -> JSResult {

@@ -14,6 +14,7 @@ pub enum Instruction {
     New(usize),
     LoadProperty,
     StoreProperty,
+    LoadThis,
 }
 
 #[derive(Debug)]

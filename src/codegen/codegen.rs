@@ -242,6 +242,17 @@ impl<'a> CodeGen<'a> {
                 };
                 self.instrs.push(instr);
             }
+            Expr::This => {
+                self.instrs.push(Instruction::LoadThis);
+            }
+            Expr::New(NewExpr { callee, arguments }) => {
+                let nargs = arguments.len();
+                for expr in arguments {
+                    self.visit_expr(expr);
+                }
+                self.visit_expr(*callee);
+                self.instrs.push(Instruction::New(nargs));
+            }
             _ => panic!("Unimplemented {:?}", expr),
         }
     }

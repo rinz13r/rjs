@@ -1,10 +1,20 @@
 use super::*;
 use gc::{Finalize, Trace};
 
-#[derive(Trace, Finalize)]
+#[derive(Trace, Finalize, Debug)]
 pub struct RegObject {
     dict: JSDict,
     proto: Option<GcBox<proto::ProtoObject>>,
+    // constructor: Option<GcBox<function::FunctionObject>>,
+}
+
+impl RegObject {
+    pub fn new() -> Self {
+        RegObject {
+            dict: JSDict::new(),
+            proto: None,
+        }
+    }
 }
 
 impl Objectable for RegObject {
