@@ -16,24 +16,24 @@ use std::rc::Rc;
 pub type GcBox<T> = Gc<GcCell<T>>;
 pub type JSDict = std::collections::HashMap<String, Value>;
 // TODO: Update after adding Error object
-pub type JSResult = Result<Value, &'static str>;
+pub type JSResult = Result<Value, Value>;
 pub type RJSFunc = fn(&mut VM, &Vec<Value>) -> JSResult;
 
 pub trait Objectable {
     fn get(&self, prop: &String) -> Value;
     fn put(&mut self, prop: &String, val: Value) {}
     fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
-        Err("Object not callable")
+        Err(Value::from_str("Object not callable"))
     }
     // TODO: Override
     fn toString(&self, _vm: &mut VM) -> JSResult {
         Ok(Value::String(String::from("[object Object]")))
     }
     fn tcall(&self, vm: &mut VM, args: &[Value]) -> JSResult {
-        Err("object not calalble")
+        Err(Value::from_str("object not calalble"))
     }
     fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
-        Err("Not constructible")
+        Err(Value::from_str("Not constructible"))
     }
 }
 

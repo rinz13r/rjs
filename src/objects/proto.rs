@@ -25,7 +25,4 @@ impl Objectable for ProtoObject {
     fn put(&mut self, prop: &String, val: Value) {
         self.dict.insert(prop.clone(), val);
     }
-    fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
-        Err("Object not callable")
-    }
 }

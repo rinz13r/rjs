@@ -4,5 +4,3 @@ function f (x, y) {
 }
 
 var p = new f (1, 2);
-print (p.x);
-print (p.y);

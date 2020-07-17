@@ -15,6 +15,8 @@ pub enum Instruction {
     LoadProperty,
     StoreProperty,
     LoadThis,
+    Return,
+    Throw,
 }
 
 #[derive(Debug)]

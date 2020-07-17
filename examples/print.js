@@ -11,4 +11,4 @@ function f (a, b) {
 f (1, 2);
 print (print);
 
-f["c"] =12;
+f.c = 12;

@@ -49,10 +49,10 @@ impl Objectable for ArrayObject {
     fn toString(&self, vm: &mut VM) -> JSResult {
         let mut res = String::from("[");
         for v in &self.vec {
-            match &v.toString(vm) {
-                Ok(o) => match o {
+            match v.toString(vm) {
+                Ok(o) => match &o {
                     Value::String(s) => res.push_str(s.as_str()),
-                    _ => return Err("toString () expected to return  String"),
+                    _ => return Err(Value::from_str("toString () expected to return  String")),
                 },
                 Err(msg) => return Err(msg),
             };

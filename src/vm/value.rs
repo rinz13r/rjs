@@ -119,6 +119,9 @@ impl Value {
     pub fn new_regobject() -> Self {
         Value::Object(Gc::new(GcCell::new(Object::new_regobject())))
     }
+    pub fn from_str(s: &str) -> Self {
+        Value::String(String::from(s))
+    }
 }
 
 impl Objectable for Value {
@@ -139,13 +142,13 @@ impl Objectable for Value {
     fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
         match self {
             Value::Object(o) => o.borrow().call(vm, args),
-            _ => Err("object not callable"),
+            _ => Err(Value::from_str("object not callable")),
         }
     }
     fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
         match self {
             Value::Object(o) => o.borrow().spawn(vm, args),
-            _ => Err("object not constructible"),
+            _ => Err(Value::from_str("object not constructible")),
         }
     }
     fn toString(&self, vm: &mut VM) -> JSResult {

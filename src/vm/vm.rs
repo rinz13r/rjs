@@ -15,6 +15,7 @@ pub struct VM<'a> {
     ctx: &'a Context,
     // this: GcBox<Object>,
     thises: Vec<Value>,
+    throw_stack: Vec<Value>,
 }
 
 struct Frame {
@@ -55,6 +56,7 @@ impl<'a> VM<'a> {
             scopes: Vec::new(),
             ctx,
             thises: Vec::new(),
+            throw_stack: Vec::new(),
         })
     }
 
@@ -119,14 +121,14 @@ impl<'a> VM<'a> {
                     }
                     let res = v.call(self, &arguments);
                     if let Some(frm) = Self::vec_back(&mut self.callstack) {
-                        match res {
-                            Ok(val) => frm.datastack.push(val),
-                            Err(msg) => panic!(msg),
-                        }
+                        match &res {
+                            Ok(val) => frm.datastack.push(val.clone()),
+                            Err(_) => return res,
+                        };
                     };
                 }
                 Instruction::LoadName(idx) => {
-                    let ref name = frm.code.names[*idx];
+                    let ref name = names[*idx];
                     let mut found = false;
                     if let Some(scope) = Self::vec_back(&mut self.scopes) {
                         if let Some(v) = scope.get(name) {
@@ -163,9 +165,9 @@ impl<'a> VM<'a> {
                     }
                     let res = f.spawn(self, &args);
                     if let Some(frm) = Self::vec_back(&mut self.callstack) {
-                        match res {
-                            Ok(val) => frm.datastack.push(val),
-                            Err(msg) => panic!(msg),
+                        match &res {
+                            Ok(val) => frm.datastack.push(val.clone()),
+                            Err(v) => return res,
                         }
                     };
                 }
@@ -190,12 +192,19 @@ impl<'a> VM<'a> {
                 }
                 Instruction::LoadThis => {
                     frm.datastack.push(match Self::vec_back_ref(&self.thises) {
-                        Some(v) => {
-                            // dbg! (v);
-                            v.clone()
-                        }
+                        Some(v) => v.clone(),
                         None => panic!("failed to load this"),
                     });
+                }
+                Instruction::Return => {
+                    let v = frm.datastack.pop().expect("datastack underflow");
+                    self.callstack.pop();
+                    return Ok(v);
+                }
+                Instruction::Throw => {
+                    let v = frm.datastack.pop().expect("datastack underflow");
+                    self.throw_stack.push(v.clone());
+                    return Err(v);
                 }
             }
         }
@@ -211,7 +220,8 @@ impl<'a> VM<'a> {
             frm.datastack.push(Value::Undefined);
         }
         self.callstack.push(frm);
-        self.exec_top_frame()
+        let res = self.exec_top_frame();
+        res
     }
     pub fn push_this(&mut self) -> Value {
         let this = Value::new_regobject();

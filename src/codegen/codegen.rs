@@ -61,6 +61,7 @@ impl<'a> CodeGen<'a> {
             Stmt::Return(ret) => {
                 if let Some(expr) = ret {
                     self.visit_expr(expr);
+                    self.instrs.push(Instruction::Return);
                 } else {
                     self.instrs.push(Instruction::LoadUndefined);
                 }
@@ -253,8 +254,46 @@ impl<'a> CodeGen<'a> {
                 self.visit_expr(*callee);
                 self.instrs.push(Instruction::New(nargs));
             }
+            Expr::Func(func) => {
+                self.visit_func(func);
+            }
             _ => panic!("Unimplemented {:?}", expr),
         }
+    }
+
+    fn visit_func(&mut self, func: Func) {
+        let (id, params, body) = (func.id, func.params, func.body);
+        // let id = match id {
+        //     None => String::from ("[anonymous function]"),
+        //     Some (id) => id.name.to_string ()
+        // };
+        // let id = id.expect("function statement requires a name");
+        let mut codegen = Self::new(true, self.ctx);
+        for i in 0..params.len() {
+            let ref param = params[i];
+            if let FuncArg::Pat(pat) = param {
+                if let Pat::Ident(ident) = pat {
+                    let ref name = ident.name;
+                    codegen.index_of_param.insert(name.to_string(), i);
+                }
+            }
+        }
+        codegen.visit_fnbody(body);
+        let code = Code::new(codegen.instrs, codegen.consts, codegen.names);
+        // let obj = value::Value::new_function(Rc::from(code), params.len());
+        let val = value::Value::new_functionobject(self.ctx, Rc::from(code), params.len());
+        self.consts.push(val);
+        self.instrs
+            .push(Instruction::LoadConst(self.consts.len() - 1));
+
+        match id {
+            Some(id) => {
+                self.names.push(id.name.to_string());
+                self.instrs
+                    .push(Instruction::StoreName(self.names.len() - 1));
+            }
+            None => (),
+        };
     }
     fn visit_pat(&mut self, pat: Pat) {
         panic!("pat");
