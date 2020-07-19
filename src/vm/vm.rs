@@ -14,7 +14,7 @@ pub struct VM<'a> {
     scopes: Vec<HashMap<String, Value>>,
     ctx: &'a Context,
     // this: GcBox<Object>,
-    thises: Vec<Value>,
+    thises: Vec<Value>, // Execution contexts
     throw_stack: Vec<Value>,
 }
 
@@ -109,6 +109,10 @@ impl<'a> VM<'a> {
                     (Some(v1), Some(v2)) => frm.datastack.push(v1 + v2),
                     _ => panic!("stack underflow during BinOp"),
                 },
+                Instruction::BinSub => match (frm.datastack.pop(), frm.datastack.pop()) {
+                    (Some(v1), Some(v2)) => frm.datastack.push(v2 - v1),
+                    _ => panic!("stack underflow during BinOp"),
+                },
                 Instruction::LoadConst(idx) => frm.datastack.push(match idx {
                     n if *n < consts.len() => consts[*n].clone(),
                     _ => panic!("const cannot be indexed"),
@@ -178,7 +182,9 @@ impl<'a> VM<'a> {
                         .expect("data stack underflow")
                         .to_string();
                     let v = frm.datastack.pop().expect("data stack underflow");
+                    self.thises.push(v.clone());
                     frm.datastack.push(v.get(&prop));
+                    self.thises.pop();
                 }
                 Instruction::StoreProperty => {
                     let prop = frm
@@ -205,6 +211,15 @@ impl<'a> VM<'a> {
                     let v = frm.datastack.pop().expect("datastack underflow");
                     self.throw_stack.push(v.clone());
                     return Err(v);
+                }
+                Instruction::PushThis => {
+                    let v = Self::vec_back_ref(&frm.datastack)
+                        .expect("data stack underflow")
+                        .clone();
+                    self.thises.push(v);
+                }
+                Instruction::PopThis => {
+                    self.thises.pop().expect("'this' underflow");
                 }
             }
         }

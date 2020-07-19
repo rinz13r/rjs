@@ -29,12 +29,10 @@ pub trait Objectable {
     fn toString(&self, _vm: &mut VM) -> JSResult {
         Ok(Value::String(String::from("[object Object]")))
     }
-    fn tcall(&self, vm: &mut VM, args: &[Value]) -> JSResult {
-        Err(Value::from_str("object not calalble"))
-    }
     fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
         Err(Value::from_str("Not constructible"))
     }
+    fn setPrototype(&mut self, prototype: GcBox<Object>);
 }
 
 pub enum DefaultValueHint {
@@ -118,6 +116,15 @@ impl Objectable for Object {
             Object::PrimFunction(o) => o.toString(vm),
             Object::FunctionObject(o) => o.toString(vm),
             Object::RegObject(o) => o.toString(vm),
+        }
+    }
+    fn setPrototype(&mut self, prototype: GcBox<Object>) {
+        match self {
+            Object::ArrayObject(o) => o.setPrototype(prototype),
+            Object::ProtoObject(o) => o.setPrototype(prototype),
+            Object::PrimFunction(o) => o.setPrototype(prototype),
+            Object::FunctionObject(o) => o.setPrototype(prototype),
+            Object::RegObject(o) => o.setPrototype(prototype),
         }
     }
 }

@@ -61,6 +61,7 @@ impl Objectable for ArrayObject {
         res.push_str("]");
         Ok(Value::String(res))
     }
+    fn setPrototype(&mut self, prototype: GcBox<Object>) {}
 }
 
 // methods (rust)

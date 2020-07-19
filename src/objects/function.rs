@@ -11,18 +11,27 @@ pub struct FunctionObject {
     code: Rc<Code>, // refcnt is enough
     length: usize,
     dict: JSDict,
+    prototype: GcBox<Object>,
 }
 
 impl FunctionObject {
     pub fn new(ctx: &Context, code: Rc<Code>, length: usize, name: &String) -> Self {
         // TODO: Add Function proto
-        Self {
+        Self::init(Self {
             code,
             length,
             name: name.clone(),
             proto: ctx.array_proto.clone(),
             dict: JSDict::new(),
-        }
+            prototype: Gc::new(GcCell::new(Object::new_regobject())),
+        })
+    }
+    fn init(mut obj: Self) -> Self {
+        obj.dict.insert(
+            "prototype".to_string(),
+            Value::Object(obj.prototype.clone()),
+        );
+        obj
     }
 }
 
@@ -45,6 +54,9 @@ impl Objectable for FunctionObject {
             Ok(_) => (),
             Err(msg) => return Err(msg),
         }
-        Ok(vm.pop_this())
+        let mut obj = vm.pop_this();
+        obj.setPrototype(self.prototype.clone());
+        Ok(obj)
     }
+    fn setPrototype(&mut self, prototype: GcBox<Object>) {}
 }

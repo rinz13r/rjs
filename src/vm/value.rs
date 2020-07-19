@@ -100,6 +100,20 @@ impl std::ops::Add for Value {
     }
 }
 
+impl std::ops::Sub for Value {
+    type Output = Self;
+    // TODO: correct impl after adding other primitives
+    fn sub(self, other: Self) -> Self {
+        match (&self, &other) {
+            (Value::Number(n1), Value::Number(n2)) => Value::Number(match (n1, n2) {
+                (Number::IaN(n1), Number::IaN(n2)) => Number::IaN(n1 - n2),
+                _ => Number::NaN,
+            }),
+            _ => Value::Undefined,
+        }
+    }
+}
+
 impl Value {
     pub fn from_f64(f: f64) -> Self {
         Value::Number(if f.is_nan() {
@@ -155,6 +169,12 @@ impl Objectable for Value {
         match &self {
             Value::Object(o) => o.borrow().toString(vm),
             _ => Ok(self.to_string()),
+        }
+    }
+    fn setPrototype(&mut self, prototype: GcBox<Object>) {
+        match self {
+            Value::Object(o) => o.borrow_mut().setPrototype(prototype),
+            _ => panic!("Expected Object"),
         }
     }
 }

@@ -5,9 +5,9 @@ use ressa::Parser;
 use crate::vm::code::*;
 use crate::vm::context::Context;
 use crate::vm::value;
-use crate::vm::value::{Number, Value};
+use crate::vm::value::Value;
 
-use std::borrow::Cow;
+// use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -20,6 +20,8 @@ struct CodeGen<'a> {
     is_func: bool,
     in_load_prop: bool,
     ctx: &'a Context,
+    this_stack_len: usize,
+    in_call_expr: bool,
 }
 
 impl<'a> CodeGen<'a> {
@@ -33,6 +35,8 @@ impl<'a> CodeGen<'a> {
             is_func,
             in_load_prop: false,
             ctx,
+            this_stack_len: 0,
+            in_call_expr: false,
         }
     }
     fn gen(src: String, ctx: &'a Context) -> Code {
@@ -170,6 +174,7 @@ impl<'a> CodeGen<'a> {
                 self.visit_expr(*right);
                 self.instrs.push(match operator {
                     BinaryOp::Plus => Instruction::BinAdd,
+                    BinaryOp::Minus => Instruction::BinSub,
                     _ => panic!("operator '{:?}' not supported yet ", operator),
                 });
             }
@@ -178,8 +183,16 @@ impl<'a> CodeGen<'a> {
                 for arg in arguments {
                     self.visit_expr(arg);
                 }
+                let this_stack_len = self.this_stack_len;
+                let in_call_expr = self.in_call_expr;
+                self.in_call_expr = true;
                 self.visit_expr(*callee);
                 self.instrs.push(Instruction::Call(len));
+                for _ in 0..(self.this_stack_len - this_stack_len) {
+                    self.instrs.push(Instruction::PopThis);
+                }
+                self.in_call_expr = in_call_expr;
+                self.this_stack_len = this_stack_len;
             }
             Expr::Ident(Ident { name }) => {
                 if self.in_load_prop {
@@ -215,6 +228,11 @@ impl<'a> CodeGen<'a> {
                 computed,
             }) => {
                 self.visit_expr(*object);
+                if self.in_call_expr {
+                    self.instrs.push(Instruction::PushThis);
+                    self.this_stack_len += 1;
+                    self.in_call_expr = false;
+                }
                 let prev = self.in_load_prop;
                 self.in_load_prop = true;
                 self.visit_expr(*property);

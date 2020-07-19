@@ -1,4 +1,5 @@
 function f () {}
 
-f.prototype = 12;
 print (f.prototype);
+var a = new f ();
+print (a.test);

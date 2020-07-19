@@ -25,4 +25,5 @@ impl Objectable for ProtoObject {
     fn put(&mut self, prop: &String, val: Value) {
         self.dict.insert(prop.clone(), val);
     }
+    fn setPrototype(&mut self, prototype: GcBox<Object>) {}
 }

@@ -14,6 +14,12 @@ impl Mother {
     fn toString(vm: &mut VM, args: &Vec<Value>) -> JSResult {
         Ok(Value::String(String::from("[object Object]")))
     }
+    fn valueOf(vm: &mut VM, args: &Vec<Value>) -> JSResult {
+        match args.len() {
+            1 => Ok(args[0].clone()),
+            _ => Err(Value::from_str("Expected 1 argument")),
+        }
+    }
 }
 
 impl Context {
@@ -39,9 +45,11 @@ impl Context {
             dict: JSDict::new(),
         };
         let to_string = Value::from_rjsfunc(Mother::toString, "toString");
+        let value_of = Value::from_rjsfunc(Mother::valueOf, "valueOf");
         mother_proto
             .dict
             .insert(String::from("toString"), to_string);
+        mother_proto.dict.insert(String::from("valueOf"), value_of);
         Gc::new(GcCell::new(mother_proto))
     }
 }

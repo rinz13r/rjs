@@ -39,4 +39,5 @@ impl Objectable for PrimFunction {
     fn toString(&self, _vm: &mut VM) -> JSResult {
         Ok(Value::String(format!("[builtin {}]", self.name)))
     }
+    fn setPrototype(&mut self, prototype: GcBox<Object>) {}
 }

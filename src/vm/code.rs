@@ -6,6 +6,7 @@ pub enum Instruction {
     LoadNull,
     PrintTop,
     BinAdd,
+    BinSub,
     LoadConst(usize),
     Call(usize),
     LoadName(usize),
@@ -17,6 +18,8 @@ pub enum Instruction {
     LoadThis,
     Return,
     Throw,
+    PushThis,
+    PopThis,
 }
 
 #[derive(Debug)]

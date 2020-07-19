@@ -5,7 +5,6 @@ use gc::{Finalize, Trace};
 pub struct RegObject {
     dict: JSDict,
     proto: Option<GcBox<Object>>,
-    // constructor: Option<GcBox<function::FunctionObject>>,
 }
 
 impl RegObject {
@@ -36,5 +35,8 @@ impl Objectable for RegObject {
     }
     fn put(&mut self, prop: &String, val: Value) {
         self.dict.insert(prop.to_string(), val);
+    }
+    fn setPrototype(&mut self, prototype: GcBox<Object>) {
+        self.proto = Some(prototype);
     }
 }
