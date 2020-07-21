@@ -4,9 +4,11 @@ use crate::vm::value::Value;
 pub enum Instruction {
     LoadUndefined,
     LoadNull,
+    LoadBool(bool),
     PrintTop,
     BinAdd,
     BinSub,
+    BinEq,
     LoadConst(usize),
     Call(usize),
     LoadName(usize),
@@ -20,6 +22,9 @@ pub enum Instruction {
     Throw,
     PushThis,
     PopThis,
+    PopJumpIfFalse(usize),
+    Jump(usize),
+    MakeArray(usize),
 }
 
 #[derive(Debug)]

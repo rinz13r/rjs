@@ -70,6 +70,9 @@ impl Object {
     pub fn new_regobject() -> Self {
         Object::RegObject(regobject::RegObject::new())
     }
+    pub fn new_arrayobject(ctx: &Context, els: Vec<Value>) -> Self {
+        Object::ArrayObject(array::ArrayObject::new(ctx, els))
+    }
 }
 
 impl Objectable for Object {

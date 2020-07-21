@@ -101,6 +101,9 @@ impl<'a> VM<'a> {
             match instr {
                 Instruction::LoadUndefined => frm.datastack.push(Value::Undefined),
                 Instruction::LoadNull => frm.datastack.push(Value::Null),
+                Instruction::LoadBool(b) => {
+                    frm.datastack.push(Value::Boolean(*b));
+                }
                 Instruction::PrintTop => match frm.datastack.pop() {
                     None => panic!("Datastack empty"),
                     Some(v) => println!("{}", v),
@@ -111,6 +114,10 @@ impl<'a> VM<'a> {
                 },
                 Instruction::BinSub => match (frm.datastack.pop(), frm.datastack.pop()) {
                     (Some(v1), Some(v2)) => frm.datastack.push(v2 - v1),
+                    _ => panic!("stack underflow during BinOp"),
+                },
+                Instruction::BinEq => match (frm.datastack.pop(), frm.datastack.pop()) {
+                    (Some(v1), Some(v2)) => frm.datastack.push(Value::Boolean(v1 == v2)),
                     _ => panic!("stack underflow during BinOp"),
                 },
                 Instruction::LoadConst(idx) => frm.datastack.push(match idx {
@@ -221,6 +228,20 @@ impl<'a> VM<'a> {
                 Instruction::PopThis => {
                     self.thises.pop().expect("'this' underflow");
                 }
+                Instruction::PopJumpIfFalse(delta) => {
+                    let condition = frm.datastack.pop().expect("datastack underflow");
+                    if !condition.to_bool() {
+                        frm.ip = *delta;
+                    }
+                }
+                Instruction::Jump(delta) => {
+                    frm.ip = *delta;
+                }
+                Instruction::MakeArray(len) => {
+                    let els = Vec::from(frm.datastack[frm.datastack.len() - len..].to_vec());
+                    frm.datastack.drain(frm.datastack.len() - len..);
+                    frm.datastack.push(Value::new_arrayobject(self.ctx, els));
+                }
             }
         }
         Ok(Value::Undefined) // Default return value of a frame
@@ -247,6 +268,12 @@ impl<'a> VM<'a> {
         match self.thises.pop() {
             Some(v) => v.clone(),
             None => panic!("this underflow"),
+        }
+    }
+    pub fn get_this(&self) -> &Value {
+        match Self::vec_back_ref(&self.thises) {
+            Some(v) => v,
+            None => panic!("Reference to 'this' does not exist"),
         }
     }
 }

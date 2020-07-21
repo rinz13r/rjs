@@ -21,6 +21,15 @@ pub enum Number {
     IaN(f64),
 }
 
+impl std::cmp::PartialEq for Number {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Number::IaN(x), Number::IaN(y)) => x == y,
+            _ => false,
+        }
+    }
+}
+
 impl std::string::ToString for Number {
     fn to_string(&self) -> String {
         match self {
@@ -31,7 +40,7 @@ impl std::string::ToString for Number {
 }
 
 impl Value {
-    fn to_boolean(&self) -> Value {
+    fn ToBoolean(&self) -> Value {
         match self {
             Value::Undefined | Value::Null => Value::Boolean(false),
             Value::Boolean(_) => self.clone(),
@@ -114,6 +123,19 @@ impl std::ops::Sub for Value {
     }
 }
 
+impl std::cmp::PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Number(n1), Value::Number(n2)) => n1 == n2,
+            (Value::Boolean(b1), Value::Boolean(b2)) => b1 == b2,
+            (Value::Object(_), Value::Object(_)) => false,
+            (Value::Undefined, Value::Null) => true,
+            (Value::Null, Value::Undefined) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Value {
     pub fn from_f64(f: f64) -> Self {
         Value::Number(if f.is_nan() {
@@ -135,6 +157,18 @@ impl Value {
     }
     pub fn from_str(s: &str) -> Self {
         Value::String(String::from(s))
+    }
+    pub fn new_arrayobject(ctx: &Context, els: Vec<Value>) -> Self {
+        Value::Object(Gc::new(GcCell::new(Object::new_arrayobject(ctx, els))))
+    }
+}
+
+impl Value {
+    pub fn to_bool(&self) -> bool {
+        match self.ToBoolean() {
+            Value::Boolean(b) => b,
+            _ => panic!("ToBoolean didn't return JSBool"),
+        }
     }
 }
 

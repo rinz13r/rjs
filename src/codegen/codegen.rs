@@ -70,6 +70,33 @@ impl<'a> CodeGen<'a> {
                     self.instrs.push(Instruction::LoadUndefined);
                 }
             }
+            Stmt::If(stmt) => {
+                self.visit_expr(stmt.test);
+
+                self.instrs.push(Instruction::PopJumpIfFalse(0));
+                let index1 = self.instrs.len() - 1;
+
+                self.visit_stmt(*stmt.consequent);
+
+                self.instrs.push(Instruction::Jump(0));
+                let index2 = self.instrs.len() - 1;
+                self.instrs[index1] = Instruction::PopJumpIfFalse(index2 + 1);
+
+                if let Some(elseif) = stmt.alternate {
+                    self.visit_stmt(*elseif);
+                }
+                let index3 = self.instrs.len() - 1;
+                self.instrs[index2] = Instruction::Jump(index3 + 1);
+            }
+            Stmt::Block(block) => {
+                for p in block.0 {
+                    match p {
+                        ProgramPart::Stmt(stmt) => self.visit_stmt(stmt),
+                        ProgramPart::Decl(decl) => self.visit_decl(decl),
+                        _ => panic!("Not impl"),
+                    }
+                }
+            }
             _ => panic!("Unimplemented stmt, {:?}", stmt),
         }
     }
@@ -163,6 +190,9 @@ impl<'a> CodeGen<'a> {
                 Lit::String(StringLit::Double(std::borrow::Cow::Borrowed(b))) => {
                     self.consts.push(Value::String(b.to_string()));
                 }
+                Lit::Boolean(b) => {
+                    self.instrs.push(Instruction::LoadBool(b));
+                }
                 _ => panic!("No support for expr: {:?} yet", lit),
             },
             Expr::Binary(BinaryExpr {
@@ -175,6 +205,7 @@ impl<'a> CodeGen<'a> {
                 self.instrs.push(match operator {
                     BinaryOp::Plus => Instruction::BinAdd,
                     BinaryOp::Minus => Instruction::BinSub,
+                    BinaryOp::Equal => Instruction::BinEq,
                     _ => panic!("operator '{:?}' not supported yet ", operator),
                 });
             }
@@ -274,6 +305,17 @@ impl<'a> CodeGen<'a> {
             }
             Expr::Func(func) => {
                 self.visit_func(func);
+            }
+            Expr::Array(els) => {
+                // TODO: Empty array slots
+                let mut len = 0;
+                for el in els {
+                    if let Some(el) = el {
+                        self.visit_expr(el);
+                        len += 1;
+                    }
+                }
+                self.instrs.push(Instruction::MakeArray(len));
             }
             _ => panic!("Unimplemented {:?}", expr),
         }

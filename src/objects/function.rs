@@ -21,7 +21,7 @@ impl FunctionObject {
             code,
             length,
             name: name.clone(),
-            proto: ctx.array_proto.clone(),
+            proto: ctx.prim_proto.clone(),
             dict: JSDict::new(),
             prototype: Gc::new(GcCell::new(Object::new_regobject())),
         })
