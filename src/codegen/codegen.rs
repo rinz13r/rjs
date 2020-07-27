@@ -153,7 +153,9 @@ impl<'a> CodeGen<'a> {
                 codegen.visit_fnbody(body);
                 let code = Code::new(codegen.instrs, codegen.consts, codegen.names);
                 // let obj = value::Value::new_function(Rc::from(code), params.len());
-                let val = value::Value::new_functionobject(self.ctx, Rc::from(code), params.len());
+                let val = self
+                    .ctx
+                    .new_Function(id.name.to_string(), Rc::from(code), params.len());
                 self.consts.push(val);
                 self.names.push(id.name.to_string());
                 self.instrs
@@ -174,13 +176,13 @@ impl<'a> CodeGen<'a> {
                 Lit::Null => self.instrs.push(Instruction::LoadNull),
                 Lit::Number(std::borrow::Cow::Borrowed(b)) => {
                     self.consts
-                        .push(Value::from_f64(b.parse::<f64>().unwrap_or_default()));
+                        .push(b.parse::<f64>().unwrap_or_default().into());
                     self.instrs
                         .push(Instruction::LoadConst(self.consts.len() - 1));
                 }
                 Lit::Number(std::borrow::Cow::Owned(b)) => {
                     self.consts
-                        .push(Value::from_f64(b.parse::<f64>().unwrap_or_default()));
+                        .push(b.parse::<f64>().unwrap_or_default().into());
                     self.instrs
                         .push(Instruction::LoadConst(self.consts.len() - 1));
                 }
@@ -341,7 +343,16 @@ impl<'a> CodeGen<'a> {
         codegen.visit_fnbody(body);
         let code = Code::new(codegen.instrs, codegen.consts, codegen.names);
         // let obj = value::Value::new_function(Rc::from(code), params.len());
-        let val = value::Value::new_functionobject(self.ctx, Rc::from(code), params.len());
+        // let val = value::Value::new_functionobject(self.ctx, Rc::from(code), params.len());
+        let val = self.ctx.new_Function(
+            if let Some(ref id) = id {
+                id.name.to_string()
+            } else {
+                "".to_string()
+            },
+            Rc::from(code),
+            params.len(),
+        );
         self.consts.push(val);
         self.instrs
             .push(Instruction::LoadConst(self.consts.len() - 1));

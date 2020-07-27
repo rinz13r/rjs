@@ -1,15 +1,32 @@
 use super::*;
 use crate::vm::value::Value;
-use gc::{Finalize, Gc, GcCell, Trace};
-
-pub type RJSFunc = fn(&mut VM, &Vec<Value>) -> JSResult;
 
 #[derive(Trace, Finalize)]
 pub struct PrimFunction {
     #[unsafe_ignore_trace]
-    func: RJSFunc,
+    pub func: RJSFunc,
+    pub name: &'static str,
+    pub prototype: GcObject,
+}
+
+pub fn new_gcobject(
+    ctx: &Context,
     name: &'static str,
-    dict: JSDict,
+    func: RJSFunc,
+    prototype: GcObject,
+) -> GcObject {
+    let mut obj = Object {
+        __proto__: Some(ctx.Function_prototype.clone()),
+        payload: ObjectPayload::PrimFunction(PrimFunction {
+            func,
+            name,
+            prototype: prototype.clone(),
+        }),
+        props: JSDict::new(),
+    };
+    obj.props
+        .insert("prototype".to_string(), Property::new(prototype.into()));
+    Gc::new(GcCell::new(obj))
 }
 
 impl std::fmt::Debug for PrimFunction {
@@ -17,27 +34,22 @@ impl std::fmt::Debug for PrimFunction {
         write!(f, "builtin function: {}", self.name)
     }
 }
+
 impl PrimFunction {
-    pub fn new(func: RJSFunc, name: &'static str) -> Self {
-        Self {
-            func,
-            name,
-            dict: JSDict::new(),
-        }
-    }
+    // pub fn new(func: RJSFunc, name: &'static str) -> Self {
+    //     Self {
+    //         func,
+    //         name,
+    //     }
+    // }
 }
 
-impl Objectable for PrimFunction {
-    fn get(&self, prop: &String) -> Value {
-        Value::Undefined
-    }
-    fn put(&mut self, prop: &String, val: Value) {}
-    fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
+impl PrimFunction {
+    pub fn Call(&self, vm: &mut VM, args: &[Value]) -> JSResult {
         let func = self.func;
         func(vm, args)
     }
     fn toString(&self, _vm: &mut VM) -> JSResult {
         Ok(Value::String(format!("[builtin {}]", self.name)))
     }
-    fn setPrototype(&mut self, prototype: GcBox<Object>) {}
 }

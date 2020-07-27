@@ -35,6 +35,7 @@ fn main() {
     };
     let ctx = Context::new();
     let code = gen_code(js, &ctx);
+    dbg!(&code.instrs);
     let mut vm = VM::new(code, &ctx);
     vm.run();
 }

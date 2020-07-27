@@ -3,6 +3,8 @@ use crate::objects::*;
 use crate::vm::code::*;
 use crate::vm::value::*;
 
+use crate::objects;
+
 extern crate gc;
 
 use std::collections::HashMap;
@@ -12,7 +14,7 @@ pub struct VM<'a> {
     callstack: Vec<Frame>,
     global_scope: HashMap<String, Value>,
     scopes: Vec<HashMap<String, Value>>,
-    ctx: &'a Context,
+    pub ctx: &'a Context,
     // this: GcBox<Object>,
     thises: Vec<Value>, // Execution contexts
     throw_stack: Vec<Value>,
@@ -22,48 +24,57 @@ struct Frame {
     datastack: Vec<Value>,
     code: Rc<Code>,
     ip: usize,
-    nargs: usize,
 }
 
 impl Frame {
-    fn new(code: Rc<Code>, nargs: usize) -> Self {
+    fn new(code: Rc<Code>) -> Self {
         Frame {
             datastack: Vec::new(),
             code,
             ip: 0,
-            nargs,
         }
     }
 }
 
-fn builtin_print(vm: &mut VM, arguments: &Vec<Value>) -> JSResult {
+fn builtin_print(vm: &mut VM, _this: Value, arguments: &[Value]) -> JSResult {
     for arg in arguments {
-        match arg.toString(vm) {
-            Ok(s) => print!("{} ", s),
-            Err(msg) => return Err(msg),
-        }
+        print!("{} ", arg.to_string());
+        // match arg.to_string() {
+        //     Ok(s) => print!("{} ", s),
+        //     Err(msg) => return Err(msg),
+        // }
     }
     println!();
-    Ok(Value::Undefined)
+    Ok(Value::default())
 }
 
 impl<'a> VM<'a> {
     pub fn new(code: Code, ctx: &'a Context) -> Self {
-        let callstack = vec![Frame::new(Rc::from(code), 0)];
+        let callstack = vec![Frame::new(Rc::from(code))];
         Self::init_vm(VM {
             callstack,
             global_scope: HashMap::new(),
             scopes: Vec::new(),
             ctx,
-            thises: Vec::new(),
+            thises: vec![Value::default()],
             throw_stack: Vec::new(),
         })
     }
 
     fn init_vm(vm: Self) -> Self {
         let mut vm = vm;
-        let print = Value::from_rjsfunc(builtin_print, "print");
-        vm.global_scope.insert("print".to_string(), print);
+        vm.global_scope
+            .insert("Object".to_string(), vm.ctx.Object_function.clone().into());
+        vm.global_scope.insert(
+            "Function".to_string(),
+            vm.ctx.Function_function.clone().into(),
+        );
+        vm.global_scope.insert(
+            "print".to_string(),
+            vm.ctx
+                .new_PrimitiveFunction("print", builtin_print, builtin_print, 0)
+                .into(),
+        );
         vm
     }
 
@@ -130,7 +141,11 @@ impl<'a> VM<'a> {
                     for _ in 0..*nargs {
                         frm.datastack.pop().expect("datastack underflow");
                     }
-                    let res = v.call(self, &arguments);
+                    let res = v.as_object(self.ctx).borrow().Call(
+                        self,
+                        self.get_this().clone(),
+                        &arguments[..],
+                    );
                     if let Some(frm) = Self::vec_back(&mut self.callstack) {
                         match &res {
                             Ok(val) => frm.datastack.push(val.clone()),
@@ -174,11 +189,11 @@ impl<'a> VM<'a> {
                         frm.datastack.pop().expect("data stack underflow");
                         // args.push (frm.datastack.pop().expect ("data stack underflow").clone ());
                     }
-                    let res = f.spawn(self, &args);
+                    let res = f.as_object(self.ctx).borrow().Construct(self, &args);
                     if let Some(frm) = Self::vec_back(&mut self.callstack) {
                         match &res {
                             Ok(val) => frm.datastack.push(val.clone()),
-                            Err(v) => return res,
+                            Err(_) => return res,
                         }
                     };
                 }
@@ -188,9 +203,14 @@ impl<'a> VM<'a> {
                         .pop()
                         .expect("data stack underflow")
                         .to_string();
-                    let v = frm.datastack.pop().expect("data stack underflow");
+                    let v: Value = frm
+                        .datastack
+                        .pop()
+                        .expect("data stack underflow")
+                        .as_object(self.ctx)
+                        .into();
                     self.thises.push(v.clone());
-                    frm.datastack.push(v.get(&prop));
+                    frm.datastack.push(v.unwrap_object().borrow().Get(&prop));
                     self.thises.pop();
                 }
                 Instruction::StoreProperty => {
@@ -199,9 +219,9 @@ impl<'a> VM<'a> {
                         .pop()
                         .expect("data stack underflow")
                         .to_string();
-                    let mut lhs = frm.datastack.pop().expect("data stack underflow");
+                    let lhs = frm.datastack.pop().expect("data stack underflow");
                     let rhs = frm.datastack.pop().expect("data stack underflow");
-                    lhs.put(&prop, rhs);
+                    lhs.as_object(self.ctx).borrow_mut().Put(prop, rhs);
                 }
                 Instruction::LoadThis => {
                     frm.datastack.push(match Self::vec_back_ref(&self.thises) {
@@ -222,7 +242,8 @@ impl<'a> VM<'a> {
                 Instruction::PushThis => {
                     let v = Self::vec_back_ref(&frm.datastack)
                         .expect("data stack underflow")
-                        .clone();
+                        .as_object(self.ctx)
+                        .into();
                     self.thises.push(v);
                 }
                 Instruction::PopThis => {
@@ -230,25 +251,27 @@ impl<'a> VM<'a> {
                 }
                 Instruction::PopJumpIfFalse(delta) => {
                     let condition = frm.datastack.pop().expect("datastack underflow");
-                    if !condition.to_bool() {
+                    let predicate: bool = condition.into();
+                    if !predicate {
                         frm.ip = *delta;
                     }
                 }
                 Instruction::Jump(delta) => {
                     frm.ip = *delta;
                 }
-                Instruction::MakeArray(len) => {
-                    let els = Vec::from(frm.datastack[frm.datastack.len() - len..].to_vec());
-                    frm.datastack.drain(frm.datastack.len() - len..);
-                    frm.datastack.push(Value::new_arrayobject(self.ctx, els));
+                Instruction::MakeArray(_len) => {
+                    panic!("Unimplemented")
+                    // let els = Vec::from(frm.datastack[frm.datastack.len() - len..].to_vec());
+                    // frm.datastack.drain(frm.datastack.len() - len..);
+                    // frm.datastack.push(Value::new_arrayobject(self.ctx, els));
                 }
             }
         }
         Ok(Value::Undefined) // Default return value of a frame
     }
 
-    pub fn call_code(&mut self, code: Rc<Code>, arity: usize, args: &Vec<Value>) -> JSResult {
-        let mut frm = Frame::new(code, arity);
+    pub fn call_code(&mut self, code: Rc<Code>, arity: usize, args: &[Value]) -> JSResult {
+        let mut frm = Frame::new(code);
         for arg in args {
             frm.datastack.push(arg.clone());
         }
@@ -259,10 +282,8 @@ impl<'a> VM<'a> {
         let res = self.exec_top_frame();
         res
     }
-    pub fn push_this(&mut self) -> Value {
-        let this = Value::new_regobject();
-        self.thises.push(this.clone());
-        this
+    pub fn push_this(&mut self, this: Value) {
+        self.thises.push(this);
     }
     pub fn pop_this(&mut self) -> Value {
         match self.thises.pop() {

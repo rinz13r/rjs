@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 use crate::objects::*;
 use crate::vm::code::Code;
 use crate::vm::context::Context;
@@ -9,34 +11,10 @@ use std::rc::Rc;
 pub enum Value {
     Null,
     Undefined,
-    Number(Number),
+    Number(f64),
     Boolean(bool),
     String(String),
-    Object(GcBox<Object>),
-}
-
-#[derive(Clone, Trace, Finalize, Debug)]
-pub enum Number {
-    NaN,
-    IaN(f64),
-}
-
-impl std::cmp::PartialEq for Number {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Number::IaN(x), Number::IaN(y)) => x == y,
-            _ => false,
-        }
-    }
-}
-
-impl std::string::ToString for Number {
-    fn to_string(&self) -> String {
-        match self {
-            Number::NaN => "NaN".to_string(),
-            Number::IaN(n) => n.to_string(),
-        }
-    }
+    Object(GcObject),
 }
 
 impl Value {
@@ -45,34 +23,32 @@ impl Value {
             Value::Undefined | Value::Null => Value::Boolean(false),
             Value::Boolean(_) => self.clone(),
             Value::Number(n) => match n {
-                Number::NaN | Number::IaN(0.) => Value::Boolean(false),
+                n if n.is_nan() => Value::Boolean(false),
+                n if n == &0. => Value::Boolean(false),
                 _ => Value::Boolean(true),
             },
             Value::String(s) => Value::Boolean(s.len() > 0),
             Value::Object(_) => Value::Boolean(true),
         }
     }
-    fn to_number(&self) -> Value {
+    pub fn ToNumber(&self) -> Value {
         match self {
-            Value::Undefined => Value::Number(Number::NaN),
-            Value::Null => Value::Number(Number::IaN(0.)),
+            Value::Undefined => Value::Number(f64::NAN),
+            Value::Null => Value::Number(0.),
             Value::Number(_) => self.clone(),
-            Value::Boolean(b) => Value::Number(Number::IaN(if *b { 1. } else { 0. })),
+            Value::Boolean(b) => Value::Number(if *b { 1. } else { 0. }),
             // TODO: impl the spec
-            Value::String(s) => Value::Number(Number::IaN(s.parse::<f64>().unwrap_or_default())),
-            Value::Object(_) => Value::Number(Number::NaN),
+            Value::String(s) => Value::Number(s.parse::<f64>().unwrap_or_default()),
+            Value::Object(_) => Value::Number(f64::NAN),
         }
     }
-    fn to_string(&self) -> Value {
-        Value::String(match self {
-            Value::Undefined => String::from("undefined"),
-            Value::Null => String::from("null"),
-            Value::Boolean(b) => b.to_string(),
-            Value::Number(n) => n.to_string(),
-            Value::String(s) => s.clone(),
-            // TODO: impl Object A/C spec
-            Value::Object(_) => String::from("object"),
-        })
+
+    fn ToString(&self) -> Value {
+        Value::from(self.to_string())
+    }
+
+    pub fn ToObject(&self, ctx: &Context) -> Value {
+        self.as_object(ctx).into()
     }
 }
 
@@ -85,11 +61,12 @@ impl std::fmt::Display for Value {
                 Value::Null => String::from("Null"),
                 Value::Undefined => String::from("Undefined"),
                 Value::Number(n) => match n {
-                    Number::NaN => String::from("NaN"),
-                    Number::IaN(num) => num.to_string(),
+                    n if n.is_nan() => String::from("NaN"),
+                    _ => n.to_string(),
                 },
                 Value::Boolean(b) => b.to_string(),
                 Value::String(s) => s.clone(),
+                // TODO: impl Object A/C spec
                 Value::Object(_) => String::from("object"),
             }
         )
@@ -100,10 +77,10 @@ impl std::ops::Add for Value {
     // TODO: correct impl after adding other primitives
     fn add(self, other: Self) -> Self {
         match (&self, &other) {
-            (Value::Number(n1), Value::Number(n2)) => Value::Number(match (n1, n2) {
-                (Number::IaN(n1), Number::IaN(n2)) => Number::IaN(n1 + n2),
-                _ => Number::NaN,
-            }),
+            (Value::Number(n1), Value::Number(n2)) => match (n1.is_nan(), n2.is_nan()) {
+                (false, false) => Value::Number(n1 + n2),
+                _ => Value::Number(f64::NAN),
+            },
             _ => Value::Undefined,
         }
     }
@@ -114,10 +91,10 @@ impl std::ops::Sub for Value {
     // TODO: correct impl after adding other primitives
     fn sub(self, other: Self) -> Self {
         match (&self, &other) {
-            (Value::Number(n1), Value::Number(n2)) => Value::Number(match (n1, n2) {
-                (Number::IaN(n1), Number::IaN(n2)) => Number::IaN(n1 - n2),
-                _ => Number::NaN,
-            }),
+            (Value::Number(n1), Value::Number(n2)) => match (n1.is_nan(), n2.is_nan()) {
+                (false, false) => Value::Number(n1 - n2),
+                _ => Value::Number(f64::NAN),
+            },
             _ => Value::Undefined,
         }
     }
@@ -137,78 +114,79 @@ impl std::cmp::PartialEq for Value {
 }
 
 impl Value {
-    pub fn from_f64(f: f64) -> Self {
-        Value::Number(if f.is_nan() {
-            Number::NaN
-        } else {
-            Number::IaN(f)
-        })
+    pub fn as_object(&self, ctx: &Context) -> GcObject {
+        match self {
+            Value::Object(o) => o.clone(),
+            Value::Number(n) => ctx.new_Number(*n).unwrap_object(),
+            _ => panic!("Not an object"),
+        }
     }
-    pub fn from_rjsfunc(func: RJSFunc, name: &'static str) -> Self {
-        Value::Object(Gc::new(GcCell::new(Object::from_rjsfunc(func, name))))
-    }
-    pub fn new_functionobject(ctx: &Context, code: Rc<Code>, len: usize) -> Self {
-        Value::Object(Gc::new(GcCell::new(Object::new_functionobject(
-            ctx, code, len,
-        ))))
-    }
-    pub fn new_regobject() -> Self {
-        Value::Object(Gc::new(GcCell::new(Object::new_regobject())))
-    }
-    pub fn from_str(s: &str) -> Self {
-        Value::String(String::from(s))
-    }
-    pub fn new_arrayobject(ctx: &Context, els: Vec<Value>) -> Self {
-        Value::Object(Gc::new(GcCell::new(Object::new_arrayobject(ctx, els))))
+    pub fn unwrap_object(&self) -> GcObject {
+        match self {
+            Value::Object(o) => o.clone(),
+            _ => panic!("Fatal Error: Not an object!"),
+        }
     }
 }
 
-impl Value {
-    pub fn to_bool(&self) -> bool {
+impl std::default::Default for Value {
+    fn default() -> Self {
+        Self::Undefined
+    }
+}
+
+impl From<f64> for Value {
+    fn from(val: f64) -> Self {
+        Value::Number(val)
+    }
+}
+
+impl From<String> for Value {
+    fn from(val: String) -> Self {
+        Self::String(val)
+    }
+}
+
+impl From<&str> for Value {
+    fn from(val: &str) -> Self {
+        Self::String(val.into())
+    }
+}
+
+impl From<bool> for Value {
+    fn from(val: bool) -> Self {
+        Self::Boolean(val)
+    }
+}
+
+impl From<u64> for Value {
+    fn from(val: u64) -> Self {
+        Value::Number((val as f64).into())
+    }
+}
+
+impl From<GcObject> for Value {
+    fn from(val: GcObject) -> Self {
+        Value::Object(val)
+    }
+}
+
+impl From<&GcObject> for Value {
+    fn from(val: &GcObject) -> Self {
+        Value::Object(val.clone())
+    }
+}
+
+impl From<Object> for Value {
+    fn from(val: Object) -> Self {
+        Value::Object(Gc::new(GcCell::new(val)))
+    }
+}
+impl Into<bool> for Value {
+    fn into(self) -> bool {
         match self.ToBoolean() {
             Value::Boolean(b) => b,
             _ => panic!("ToBoolean didn't return JSBool"),
-        }
-    }
-}
-
-impl Objectable for Value {
-    fn get(&self, prop: &String) -> Value {
-        match self {
-            Value::Object(o) => o.borrow().get(prop),
-            _ => Value::Undefined,
-        }
-    }
-    fn put(&mut self, prop: &String, val: Value) {
-        match self {
-            Value::Object(o) => o.borrow_mut().put(prop, val),
-            _ => {
-                panic!("'put' expected object. Received: {}", val);
-            }
-        }
-    }
-    fn call(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
-        match self {
-            Value::Object(o) => o.borrow().call(vm, args),
-            _ => Err(Value::from_str("object not callable")),
-        }
-    }
-    fn spawn(&self, vm: &mut VM, args: &Vec<Value>) -> JSResult {
-        match self {
-            Value::Object(o) => o.borrow().spawn(vm, args),
-            _ => Err(Value::from_str("object not constructible")),
-        }
-    }
-    fn toString(&self, vm: &mut VM) -> JSResult {
-        match &self {
-            Value::Object(o) => o.borrow().toString(vm),
-            _ => Ok(self.to_string()),
-        }
-    }
-    fn setPrototype(&mut self, prototype: GcBox<Object>) {
-        match self {
-            Value::Object(o) => o.borrow_mut().setPrototype(prototype),
-            _ => panic!("Expected Object"),
         }
     }
 }
