@@ -8,6 +8,12 @@ impl Number {
     pub fn new(value: f64) -> Self {
         Self { value }
     }
+    pub fn valueOf(&self) -> Value {
+        self.value.into()
+    }
+    pub fn toString(&self) -> Value {
+        self.value.to_string().into()
+    }
 }
 
 macro_rules! extract_number {
@@ -25,21 +31,23 @@ macro_rules! extract_number {
 }
 
 // JS Primitives
-pub fn function(_vm: &mut VM, _this: Value, args: &[Value]) -> JSResult {
+pub fn function(vm: &mut VM, args: &[Value]) -> JSResult {
     Ok(match args.len() {
         0 => Value::Number(0.),
-        _ => args[0].ToNumber(),
+        _ => args[0].ToNumber(vm)?,
     })
 }
 
-pub fn constructor(_vm: &mut VM, _this: Value, _args: &[Value]) -> JSResult {
+pub fn constructor(_vm: &mut VM, _args: &[Value]) -> JSResult {
     Err("sdf".into())
 }
 
-pub fn valueOf(_vm: &mut VM, this: Value, _args: &[Value]) -> JSResult {
+pub fn valueOf(vm: &mut VM, _args: &[Value]) -> JSResult {
+    let this = vm.get_this();
     Ok(extract_number!(this).value.into())
 }
 
-pub fn toString(_vm: &mut VM, this: Value, _args: &[Value]) -> JSResult {
+pub fn toString(vm: &mut VM, _args: &[Value]) -> JSResult {
+    let this = vm.get_this();
     Ok(extract_number!(this).value.to_string().into())
 }

@@ -4,7 +4,6 @@ use ressa::Parser;
 
 use crate::vm::code::*;
 use crate::vm::context::Context;
-use crate::vm::value;
 use crate::vm::value::Value;
 
 // use std::borrow::Cow;
@@ -256,9 +255,7 @@ impl<'a> CodeGen<'a> {
                 ));
             }
             Expr::Member(MemberExpr {
-                object,
-                property,
-                computed,
+                object, property, ..
             }) => {
                 self.visit_expr(*object);
                 if self.in_call_expr {
@@ -366,14 +363,8 @@ impl<'a> CodeGen<'a> {
             None => (),
         };
     }
-    fn visit_pat(&mut self, pat: Pat) {
+    fn visit_pat(&mut self, _pat: Pat) {
         panic!("pat");
-    }
-    fn vec_back_ref<T>(vec: &Vec<T>) -> Option<&T> {
-        match vec.len() {
-            0 => None,
-            n => Some(&vec[n - 1]),
-        }
     }
 }
 

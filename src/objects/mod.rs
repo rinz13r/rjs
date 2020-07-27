@@ -3,20 +3,19 @@
 pub mod function;
 pub mod number;
 pub mod object;
+pub mod regular;
+pub mod string;
 
-use crate::vm::code::Code;
-use crate::vm::context::Context;
 use crate::vm::value::Value;
 use crate::vm::vm::VM;
 pub use gc::{Finalize, Gc, GcCell, Trace};
 use std::collections::HashMap;
-use std::rc::Rc;
 
 type GcBox<T> = Gc<GcCell<T>>;
 pub type GcObject = GcBox<Object>;
 pub type JSDict = std::collections::HashMap<String, Property>;
 pub type JSResult = Result<Value, Value>;
-pub type RJSFunc = fn(&mut VM, this: Value, &[Value]) -> JSResult;
+pub type RJSFunc = fn(&mut VM, &[Value]) -> JSResult;
 
 #[derive(Trace, Finalize, Debug)]
 pub struct Property {
@@ -49,9 +48,24 @@ pub struct Object {
 #[derive(Trace, Finalize, Debug)]
 pub enum ObjectPayload {
     Number(number::Number),
+    String(string::String),
     Function(function::Function),
     PrimitiveFunction(function::PrimitiveFunction),
-    Regular,
+    Regular(regular::Regular),
+}
+
+use std::cmp::PartialEq;
+
+#[derive(PartialEq, Debug)]
+pub enum PreferredType {
+    Number,
+    String,
+}
+
+impl Default for PreferredType {
+    fn default() -> Self {
+        Self::Number
+    }
 }
 
 pub trait Objectable {
@@ -60,7 +74,10 @@ pub trait Objectable {
     fn CanPut(&self, key: &String) -> bool;
     fn HasProperty(&self, key: &String) -> bool;
     fn Construct(&self, _vm: &mut VM, _args: &[Value]) -> JSResult;
-    fn Call(&self, _vm: &mut VM, this: Value, _args: &[Value]) -> JSResult;
+    fn Call(&self, _vm: &mut VM, _args: &[Value]) -> JSResult;
+    fn valueOf(&self, vm: &mut VM) -> JSResult;
+    fn toString(&self, vm: &mut VM) -> JSResult;
+    fn DefaultValue(&self, hint: Option<PreferredType>, vm: &mut VM) -> JSResult;
 }
 
 impl Objectable for Object {
@@ -108,12 +125,51 @@ impl Objectable for Object {
             _ => Err("Object not constructible".into()),
         }
     }
-    fn Call(&self, vm: &mut VM, this: Value, args: &[Value]) -> JSResult {
+    fn Call(&self, vm: &mut VM, args: &[Value]) -> JSResult {
         match &self.payload {
-            // ObjectPayload::PrimFunction(o) => o.Call(vm, args),
-            ObjectPayload::Function(o) => o.Call(vm, this, args),
-            ObjectPayload::PrimitiveFunction(o) => o.Call(vm, this, args),
+            ObjectPayload::Function(o) => o.Call(vm, args),
+            ObjectPayload::PrimitiveFunction(o) => o.Call(vm, args),
             _ => Err("Object not callable".into()),
+        }
+    }
+    fn valueOf(&self, vm: &mut VM) -> JSResult {
+        match &self.payload {
+            ObjectPayload::Number(o) => Ok(o.valueOf()),
+            ObjectPayload::String(o) => Ok(o.valueOf()),
+            ObjectPayload::Regular(o) => o.valueOf(self, vm),
+            _ => Err("couldn't compute valueOf".into()),
+        }
+    }
+    fn toString(&self, vm: &mut VM) -> JSResult {
+        match &self.payload {
+            ObjectPayload::Number(o) => Ok(o.toString()),
+            ObjectPayload::String(o) => Ok(o.toString()),
+            ObjectPayload::Regular(o) => o.toString(vm),
+            _ => Err("couldn't compute toString".into()),
+        }
+    }
+    fn DefaultValue(&self, hint: Option<PreferredType>, vm: &mut VM) -> JSResult {
+        let hint = hint.unwrap_or_default();
+        let string = self.toString(vm);
+        let value = self.valueOf(vm);
+        if hint == PreferredType::String {
+            match string {
+                Err(_) | Ok(Value::Object(_)) => (),
+                Ok(v) => return Ok(v),
+            }
+            match value {
+                Err(_) | Ok(Value::Object(_)) => Err("runtime error".into()),
+                Ok(v) => Ok(v),
+            }
+        } else {
+            match value {
+                Err(_) | Ok(Value::Object(_)) => (),
+                Ok(v) => return Ok(v),
+            }
+            match string {
+                Err(_) | Ok(Value::Object(_)) => Err("runtime error".into()),
+                Ok(v) => Ok(v),
+            }
         }
     }
 }

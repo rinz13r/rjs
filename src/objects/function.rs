@@ -17,7 +17,7 @@ pub struct PrimitiveFunction {
     #[unsafe_ignore_trace]
     pub func: RJSFunc,
     #[unsafe_ignore_trace]
-    pub constructor: RJSFunc,
+    pub constructor: Option<RJSFunc>,
     pub length: usize,
     pub prototype: GcObject,
 }
@@ -32,7 +32,7 @@ impl Function {
         }
     }
 
-    pub fn Call(&self, vm: &mut VM, _this: Value, args: &[Value]) -> JSResult {
+    pub fn Call(&self, vm: &mut VM, args: &[Value]) -> JSResult {
         vm.call_code(self.code.clone(), self.length, args)
     }
     // TODO:
@@ -40,7 +40,7 @@ impl Function {
         let this = vm.ctx.new_Object(Some(self.prototype.clone()));
         vm.push_this(this.clone());
         this.unwrap_object().borrow_mut().__proto__ = self.prototype.clone().into();
-        match self.Call(vm, this, args) {
+        match self.Call(vm, args) {
             Ok(_) => (),
             Err(msg) => return Err(msg),
         }
@@ -52,7 +52,7 @@ impl PrimitiveFunction {
     pub fn new(
         name: &'static str,
         func: RJSFunc,
-        constructor: RJSFunc,
+        constructor: Option<RJSFunc>,
         length: usize,
         prototype: GcObject,
     ) -> Self {
@@ -64,14 +64,17 @@ impl PrimitiveFunction {
             prototype,
         }
     }
-    pub fn Call(&self, vm: &mut VM, this: Value, args: &[Value]) -> JSResult {
+    pub fn Call(&self, vm: &mut VM, args: &[Value]) -> JSResult {
         let func = self.func;
-        func(vm, this, args)
+        func(vm, args)
     }
+    // PrimitiveFunction's constructors will build the object themselves
     pub fn Construct(&self, vm: &mut VM, args: &[Value]) -> JSResult {
-        let cons = self.constructor;
-        let this = Value::default();
-        cons(vm, this, args)
+        if let Some(cons) = self.constructor {
+            cons(vm, args)
+        } else {
+            Err(format!("{} is not a Constructor", self.name).into())
+        }
     }
 }
 
@@ -83,6 +86,10 @@ impl std::fmt::Debug for PrimitiveFunction {
 
 // JS Primitives
 // function Function ()
-pub fn Function_constructor(vm: &mut VM, this: Value, args: &[Value]) -> JSResult {
+pub fn function(_vm: &mut VM, _args: &[Value]) -> JSResult {
+    Err("Not impl".into())
+}
+
+pub fn constructor(_vm: &mut VM, _args: &[Value]) -> JSResult {
     Err("Not impl".into())
 }

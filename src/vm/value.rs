@@ -1,11 +1,9 @@
 #![allow(non_snake_case)]
 
 use crate::objects::*;
-use crate::vm::code::Code;
 use crate::vm::context::Context;
 use crate::vm::vm::VM;
 use gc::{Finalize, Gc, GcCell, Trace};
-use std::rc::Rc;
 
 #[derive(Trace, Finalize, Clone, Debug)]
 pub enum Value {
@@ -31,24 +29,42 @@ impl Value {
             Value::Object(_) => Value::Boolean(true),
         }
     }
-    pub fn ToNumber(&self) -> Value {
-        match self {
+    pub fn ToNumber(&self, vm: &mut VM) -> JSResult {
+        Ok(match self {
             Value::Undefined => Value::Number(f64::NAN),
             Value::Null => Value::Number(0.),
             Value::Number(_) => self.clone(),
             Value::Boolean(b) => Value::Number(if *b { 1. } else { 0. }),
             // TODO: impl the spec
             Value::String(s) => Value::Number(s.parse::<f64>().unwrap_or_default()),
-            Value::Object(_) => Value::Number(f64::NAN),
-        }
-    }
-
-    fn ToString(&self) -> Value {
-        Value::from(self.to_string())
+            Value::Object(o) => o.borrow().DefaultValue(PreferredType::Number.into(), vm)?,
+        })
     }
 
     pub fn ToObject(&self, ctx: &Context) -> Value {
         self.as_object(ctx).into()
+    }
+
+    pub fn ToPrimitive(&self, vm: &mut VM) -> JSResult {
+        match self {
+            Value::Object(o) => o.borrow().DefaultValue(None, vm),
+            _ => Ok(self.clone()),
+        }
+    }
+    pub fn ToString(&self, vm: &mut VM) -> JSResult {
+        match self {
+            Value::Undefined => Ok("undefined".into()),
+            Value::Null => Ok("null".into()),
+            Value::Boolean(b) => Ok(b.to_string().into()),
+            Value::Number(n) => Ok(n.to_string().into()),
+            Value::String(s) => Ok(s.clone().into()),
+            Value::Object(o) => {
+                vm.push_this(self.clone());
+                let ret = o.borrow().DefaultValue(PreferredType::String.into(), vm);
+                vm.pop_this();
+                ret
+            }
+        }
     }
 }
 
@@ -72,15 +88,13 @@ impl std::fmt::Display for Value {
         )
     }
 }
+
 impl std::ops::Add for Value {
     type Output = Self;
     // TODO: correct impl after adding other primitives
     fn add(self, other: Self) -> Self {
         match (&self, &other) {
-            (Value::Number(n1), Value::Number(n2)) => match (n1.is_nan(), n2.is_nan()) {
-                (false, false) => Value::Number(n1 + n2),
-                _ => Value::Number(f64::NAN),
-            },
+            (Value::Number(n1), Value::Number(n2)) => (n1 + n2).into(),
             _ => Value::Undefined,
         }
     }
@@ -118,6 +132,7 @@ impl Value {
         match self {
             Value::Object(o) => o.clone(),
             Value::Number(n) => ctx.new_Number(*n).unwrap_object(),
+            Value::String(s) => ctx.new_String(s.clone()).unwrap_object(),
             _ => panic!("Not an object"),
         }
     }
@@ -125,6 +140,12 @@ impl Value {
         match self {
             Value::Object(o) => o.clone(),
             _ => panic!("Fatal Error: Not an object!"),
+        }
+    }
+    pub fn unwrap_string(&self) -> &String {
+        match self {
+            Value::String(o) => o,
+            _ => panic!("Fatal Error: Not a String!"),
         }
     }
 }
@@ -188,5 +209,37 @@ impl Into<bool> for Value {
             Value::Boolean(b) => b,
             _ => panic!("ToBoolean didn't return JSBool"),
         }
+    }
+}
+
+impl Value {
+    fn is_String(&self) -> bool {
+        if let Value::String(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
+// Operators
+impl Value {
+    pub fn bin_add(&self, rhs: Self, vm: &mut VM) -> JSResult {
+        let v1 = self.ToPrimitive(vm)?;
+        let v2 = rhs.ToPrimitive(vm)?;
+        if !(v1.is_String() || v2.is_String()) {
+            let v1 = v1.ToNumber(vm)?;
+            let v2 = v2.ToNumber(vm)?;
+            Ok(v1 + v2)
+        } else {
+            let v1 = v1.ToString(vm)?;
+            let v2 = v2.ToString(vm)?;
+            Ok(v1 + v2)
+        }
+    }
+    pub fn bin_sub(&self, rhs: Self, vm: &mut VM) -> JSResult {
+        let v1 = self.ToNumber(vm)?;
+        let v2 = rhs.ToNumber(vm)?;
+        Ok(v1 - v2)
     }
 }

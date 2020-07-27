@@ -11,6 +11,8 @@ pub struct Context {
     pub Function_function: GcObject,
     pub Number_prototype: GcObject,
     pub Number_function: GcObject,
+    pub String_prototype: GcObject,
+    pub String_function: GcObject,
 }
 
 impl Context {
@@ -23,6 +25,9 @@ impl Context {
         let Number_prototype = Self::build_Number_prototype(Object_prototype.clone());
         let Number_function =
             Self::build_Number_function(Function_prototype.clone(), Number_prototype.clone());
+        let String_prototype = Self::build_String_prototype(Object_prototype.clone());
+        let String_function =
+            Self::build_String_function(Function_prototype.clone(), String_prototype.clone());
         let mut ctx = Context {
             Object_prototype,
             Object_function,
@@ -30,21 +35,20 @@ impl Context {
             Function_function,
             Number_prototype,
             Number_function,
+            String_prototype,
+            String_function,
         };
+        ctx.init_Object_prototype();
         ctx.init_Number_prototype();
         ctx
     }
 
     // Object.prototype
     fn build_Object_prototype() -> GcObject {
-        // let Object_prototype = proto::ProtoObject {
-        //     parent: None,
-        //     dict: JSDict::new(),
-        // };
         // TODO: Add properties to Object.prototype
         Gc::new(GcCell::new(Object {
             __proto__: None,
-            payload: ObjectPayload::Regular,
+            payload: ObjectPayload::Regular(regular::Regular),
             props: JSDict::new(),
         }))
     }
@@ -53,7 +57,7 @@ impl Context {
         let Function_prototype = Object {
             __proto__: Some(Object_prototype),
             props: JSDict::new(),
-            payload: ObjectPayload::Regular,
+            payload: ObjectPayload::Regular(regular::Regular),
         };
         Gc::new(GcCell::new(Function_prototype))
     }
@@ -65,8 +69,8 @@ impl Context {
             payload: ObjectPayload::PrimitiveFunction(function::PrimitiveFunction {
                 name: "Function",
                 prototype: Function_prototype,
-                func: function::Function_constructor,
-                constructor: function::Function_constructor,
+                func: function::function,
+                constructor: Some(function::constructor),
                 length: 0,
             }),
         };
@@ -74,24 +78,28 @@ impl Context {
     }
     // function Object ()
     fn build_Object_function(Function_prototype: GcObject, Object_prototype: GcObject) -> GcObject {
-        let Object = Object {
+        let mut Object = Object {
             __proto__: Some(Function_prototype),
             payload: ObjectPayload::PrimitiveFunction(function::PrimitiveFunction {
                 name: "Object",
                 func: object::function,
-                constructor: object::constructor,
-                prototype: Object_prototype,
+                constructor: Some(object::constructor),
+                prototype: Object_prototype.clone(),
                 length: 0,
             }),
             props: JSDict::new(),
         };
+        Object.props.insert(
+            "prototype".to_string(),
+            Property::new(Object_prototype.into()),
+        );
         Gc::new(GcCell::new(Object))
     }
 
     fn build_Number_prototype(Object_prototype: GcObject) -> GcObject {
         let Number_prototype = Object {
             __proto__: Some(Object_prototype),
-            payload: ObjectPayload::Regular,
+            payload: ObjectPayload::Regular(regular::Regular),
             props: JSDict::new(),
         };
         Gc::new(GcCell::new(Number_prototype))
@@ -103,13 +111,36 @@ impl Context {
             payload: ObjectPayload::PrimitiveFunction(function::PrimitiveFunction {
                 name: "Number",
                 func: number::function,
-                constructor: number::constructor,
+                constructor: Some(number::constructor),
                 length: 0,
                 prototype: Number_prototype,
             }),
             props: JSDict::new(),
         };
         Gc::new(GcCell::new(Number_function))
+    }
+    fn build_String_prototype(Object_prototype: GcObject) -> GcObject {
+        let String_prototype = Object {
+            __proto__: Some(Object_prototype),
+            payload: ObjectPayload::Regular(regular::Regular),
+            props: JSDict::new(),
+        };
+        Gc::new(GcCell::new(String_prototype))
+    }
+
+    fn build_String_function(Function_prototype: GcObject, String_prototype: GcObject) -> GcObject {
+        let String_function = Object {
+            __proto__: Some(Function_prototype),
+            payload: ObjectPayload::PrimitiveFunction(function::PrimitiveFunction {
+                name: "Number",
+                func: string::function,
+                constructor: Some(string::constructor),
+                length: 0,
+                prototype: String_prototype,
+            }),
+            props: JSDict::new(),
+        };
+        Gc::new(GcCell::new(String_function))
     }
 }
 
@@ -121,10 +152,22 @@ impl Context {
                 .props
                 .insert(key, Property::new(value));
         }
-        let valueOf = self.new_PrimitiveFunction("valueOf", number::valueOf, number::valueOf, 0);
-        let toString = self.new_PrimitiveFunction("toString", number::toString, number::toString, 0);
+        let valueOf = self.new_PrimitiveFunction("valueOf", number::valueOf, None, 0);
+        let toString = self.new_PrimitiveFunction("toString", number::toString, None, 0);
         insert_prop(&mut self.Number_prototype, "valueOf".to_string(), valueOf);
         insert_prop(&mut self.Number_prototype, "toString".to_string(), toString);
+    }
+    fn init_Object_prototype(&mut self) {
+        fn insert_prop(prototype: &mut GcObject, key: String, value: Value) {
+            prototype
+                .borrow_mut()
+                .props
+                .insert(key, Property::new(value));
+        }
+        let valueOf = self.new_PrimitiveFunction("valueOf", object::valueOf, None, 0);
+        let toString = self.new_PrimitiveFunction("toString", object::toString, None, 0);
+        insert_prop(&mut self.Object_prototype, "valueOf".to_string(), valueOf);
+        insert_prop(&mut self.Object_prototype, "toString".to_string(), toString);
     }
 }
 use super::code::Code;
@@ -143,7 +186,7 @@ impl Context {
     pub fn new_Object(&self, __proto__: Option<GcObject>) -> Value {
         let object = Object {
             __proto__,
-            payload: ObjectPayload::Regular,
+            payload: ObjectPayload::Regular(regular::Regular),
             props: JSDict::new(),
         };
         Value::Object(Gc::new(GcCell::new(object)))
@@ -174,7 +217,7 @@ impl Context {
         &self,
         name: &'static str,
         func: RJSFunc,
-        constructor: RJSFunc,
+        constructor: Option<RJSFunc>,
         length: usize,
     ) -> Value {
         let prototype = self
@@ -194,6 +237,14 @@ impl Context {
         object
             .props
             .insert("prototype".to_string(), Property::new(prototype.into()));
+        object.into()
+    }
+    pub fn new_String(&self, value: String) -> Value {
+        let object = Object {
+            __proto__: self.String_prototype.clone().into(),
+            payload: ObjectPayload::String(string::String::new(value)),
+            props: JSDict::new(),
+        };
         object.into()
     }
 }

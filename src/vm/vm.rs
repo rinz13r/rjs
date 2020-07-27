@@ -3,10 +3,6 @@ use crate::objects::*;
 use crate::vm::code::*;
 use crate::vm::value::*;
 
-use crate::objects;
-
-extern crate gc;
-
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -15,7 +11,6 @@ pub struct VM<'a> {
     global_scope: HashMap<String, Value>,
     scopes: Vec<HashMap<String, Value>>,
     pub ctx: &'a Context,
-    // this: GcBox<Object>,
     thises: Vec<Value>, // Execution contexts
     throw_stack: Vec<Value>,
 }
@@ -36,7 +31,7 @@ impl Frame {
     }
 }
 
-fn builtin_print(vm: &mut VM, _this: Value, arguments: &[Value]) -> JSResult {
+fn builtin_print(_vm: &mut VM, arguments: &[Value]) -> JSResult {
     for arg in arguments {
         print!("{} ", arg.to_string());
         // match arg.to_string() {
@@ -69,37 +64,30 @@ impl<'a> VM<'a> {
             "Function".to_string(),
             vm.ctx.Function_function.clone().into(),
         );
+        vm.global_scope
+            .insert("Number".to_string(), vm.ctx.Number_function.clone().into());
+        vm.global_scope
+            .insert("String".to_string(), vm.ctx.String_function.clone().into());
         vm.global_scope.insert(
             "print".to_string(),
             vm.ctx
-                .new_PrimitiveFunction("print", builtin_print, builtin_print, 0)
+                .new_PrimitiveFunction("print", builtin_print, None, 0)
                 .into(),
         );
         vm
     }
 
-    #[inline]
-    fn vec_back<T>(v: &mut Vec<T>) -> Option<&mut T> {
-        match v.len() {
-            0 => None,
-            n => Some(&mut v[n - 1]),
-        }
-    }
-    #[inline(always)]
-    fn vec_back_ref<T>(v: &Vec<T>) -> Option<&T> {
-        match v.len() {
-            0 => None,
-            n => Some(&v[n - 1]),
-        }
-    }
     // TODO: return Result to indicate success or uncaught expcetion
     pub fn run(&mut self) {
         while self.callstack.len() > 0 {
-            self.exec_top_frame();
+            match self.exec_top_frame() {
+                Err(e) => panic!(e.to_string()),
+                _ => (),
+            }
         }
     }
     pub fn exec_top_frame(&mut self) -> JSResult {
-        while let Some(frm) = Self::vec_back(&mut self.callstack) {
+        while let Some(frm) = self.callstack.last_mut() {
             let ref instrs = frm.code.instrs;
             if frm.ip >= instrs.len() {
                 self.callstack.pop();
@@ -120,11 +108,21 @@ impl<'a> VM<'a> {
                     Some(v) => println!("{}", v),
                 },
                 Instruction::BinAdd => match (frm.datastack.pop(), frm.datastack.pop()) {
-                    (Some(v1), Some(v2)) => frm.datastack.push(v1 + v2),
+                    (Some(v1), Some(v2)) => {
+                        let res = v1.bin_add(v2, self)?;
+                        if let Some(frm) = self.callstack.last_mut() {
+                            frm.datastack.push(res);
+                        }
+                    }
                     _ => panic!("stack underflow during BinOp"),
                 },
                 Instruction::BinSub => match (frm.datastack.pop(), frm.datastack.pop()) {
-                    (Some(v1), Some(v2)) => frm.datastack.push(v2 - v1),
+                    (Some(v1), Some(v2)) => {
+                        let res = v2.bin_sub(v1, self)?;
+                        if let Some(frm) = self.callstack.last_mut() {
+                            frm.datastack.push(res);
+                        }
+                    }
                     _ => panic!("stack underflow during BinOp"),
                 },
                 Instruction::BinEq => match (frm.datastack.pop(), frm.datastack.pop()) {
@@ -141,12 +139,8 @@ impl<'a> VM<'a> {
                     for _ in 0..*nargs {
                         frm.datastack.pop().expect("datastack underflow");
                     }
-                    let res = v.as_object(self.ctx).borrow().Call(
-                        self,
-                        self.get_this().clone(),
-                        &arguments[..],
-                    );
-                    if let Some(frm) = Self::vec_back(&mut self.callstack) {
+                    let res = v.as_object(self.ctx).borrow().Call(self, &arguments[..]);
+                    if let Some(frm) = self.callstack.last_mut() {
                         match &res {
                             Ok(val) => frm.datastack.push(val.clone()),
                             Err(_) => return res,
@@ -156,7 +150,7 @@ impl<'a> VM<'a> {
                 Instruction::LoadName(idx) => {
                     let ref name = names[*idx];
                     let mut found = false;
-                    if let Some(scope) = Self::vec_back(&mut self.scopes) {
+                    if let Some(scope) = self.scopes.last_mut() {
                         if let Some(v) = scope.get(name) {
                             frm.datastack.push(v.clone());
                             found = true;
@@ -173,7 +167,7 @@ impl<'a> VM<'a> {
                 Instruction::StoreName(idx) => {
                     let ref name = frm.code.names[*idx];
                     let v = frm.datastack.pop().unwrap();
-                    if let Some(scope) = Self::vec_back(&mut self.scopes) {
+                    if let Some(scope) = self.scopes.last_mut() {
                         scope.insert(name.clone(), v);
                     } else {
                         self.global_scope.insert(name.clone(), v);
@@ -190,7 +184,7 @@ impl<'a> VM<'a> {
                         // args.push (frm.datastack.pop().expect ("data stack underflow").clone ());
                     }
                     let res = f.as_object(self.ctx).borrow().Construct(self, &args);
-                    if let Some(frm) = Self::vec_back(&mut self.callstack) {
+                    if let Some(frm) = self.callstack.last_mut() {
                         match &res {
                             Ok(val) => frm.datastack.push(val.clone()),
                             Err(_) => return res,
@@ -224,7 +218,7 @@ impl<'a> VM<'a> {
                     lhs.as_object(self.ctx).borrow_mut().Put(prop, rhs);
                 }
                 Instruction::LoadThis => {
-                    frm.datastack.push(match Self::vec_back_ref(&self.thises) {
+                    frm.datastack.push(match self.thises.last() {
                         Some(v) => v.clone(),
                         None => panic!("failed to load this"),
                     });
@@ -240,7 +234,9 @@ impl<'a> VM<'a> {
                     return Err(v);
                 }
                 Instruction::PushThis => {
-                    let v = Self::vec_back_ref(&frm.datastack)
+                    let v = frm
+                        .datastack
+                        .last()
                         .expect("data stack underflow")
                         .as_object(self.ctx)
                         .into();
@@ -292,7 +288,7 @@ impl<'a> VM<'a> {
         }
     }
     pub fn get_this(&self) -> &Value {
-        match Self::vec_back_ref(&self.thises) {
+        match self.thises.last() {
             Some(v) => v,
             None => panic!("Reference to 'this' does not exist"),
         }
