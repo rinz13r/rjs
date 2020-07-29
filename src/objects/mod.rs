@@ -3,7 +3,6 @@
 pub mod function;
 pub mod number;
 pub mod object;
-pub mod regular;
 pub mod string;
 
 use crate::vm::value::Value;
@@ -51,7 +50,7 @@ pub enum ObjectPayload {
     String(string::String),
     Function(function::Function),
     PrimitiveFunction(function::PrimitiveFunction),
-    Regular(regular::Regular),
+    Regular(object::Regular),
 }
 
 use std::cmp::PartialEq;
@@ -76,8 +75,8 @@ pub trait Objectable {
     fn Construct(&self, _vm: &mut VM, _args: &[Value]) -> JSResult;
     fn Call(&self, _vm: &mut VM, _args: &[Value]) -> JSResult;
     fn valueOf(&self, vm: &mut VM) -> JSResult;
-    fn toString(&self, vm: &mut VM) -> JSResult;
-    fn DefaultValue(&self, hint: Option<PreferredType>, vm: &mut VM) -> JSResult;
+    fn toString(&self, gcobj: &GcObject, vm: &mut VM) -> JSResult;
+    fn DefaultValue(&self, hint: Option<PreferredType>, gcobj: &GcObject, vm: &mut VM) -> JSResult;
 }
 
 impl Objectable for Object {
@@ -140,17 +139,17 @@ impl Objectable for Object {
             _ => Err("couldn't compute valueOf".into()),
         }
     }
-    fn toString(&self, vm: &mut VM) -> JSResult {
+    fn toString(&self, gcobj: &GcObject, vm: &mut VM) -> JSResult {
         match &self.payload {
             ObjectPayload::Number(o) => Ok(o.toString()),
             ObjectPayload::String(o) => Ok(o.toString()),
-            ObjectPayload::Regular(o) => o.toString(vm),
+            ObjectPayload::Regular(o) => o.toString(gcobj, vm),
             _ => Err("couldn't compute toString".into()),
         }
     }
-    fn DefaultValue(&self, hint: Option<PreferredType>, vm: &mut VM) -> JSResult {
+    fn DefaultValue(&self, hint: Option<PreferredType>, gcobj: &GcObject, vm: &mut VM) -> JSResult {
         let hint = hint.unwrap_or_default();
-        let string = self.toString(vm);
+        let string = self.toString(gcobj, vm);
         let value = self.valueOf(vm);
         if hint == PreferredType::String {
             match string {

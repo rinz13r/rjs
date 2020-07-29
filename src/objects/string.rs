@@ -39,3 +39,21 @@ pub fn constructor(vm: &mut VM, args: &[Value]) -> JSResult {
         }
     }
 }
+
+pub fn toString(vm: &mut VM, _args: &[Value]) -> JSResult {
+    let obj = vm.get_this().as_object(vm.ctx);
+    let ref payload = obj.borrow().payload;
+    match payload {
+        ObjectPayload::String(s) => Ok(s.valueOf()),
+        _ => Err("RuntimeError: `this` is not a String object".into()),
+    }
+}
+
+pub fn valueOf(vm: &mut VM, _args: &[Value]) -> JSResult {
+    let obj = vm.get_this().as_object(vm.ctx);
+    let ref payload = obj.borrow().payload;
+    match payload {
+        ObjectPayload::String(s) => Ok(s.valueOf()),
+        _ => Err("RuntimeError: `this` is not a String object".into()),
+    }
+}

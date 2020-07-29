@@ -8,11 +8,13 @@ Point.prototype.print = function () {
 Point.prototype.add = function (other) {
     return new Point (this.x + other.x, this.y + other.y);
 }
+Point.prototype.toString = function () {
+    return String(this.x) + " " + String(this.y);
+}
 
 var p1 = new Point (1, 2);
 var p2 = new Point (3, 4);
 p1.print ();
 p2.print ();
 
-var p = p1.add (p2).print ();
-print (p);
+p1.add (p2).print ();

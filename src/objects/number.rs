@@ -38,8 +38,20 @@ pub fn function(vm: &mut VM, args: &[Value]) -> JSResult {
     })
 }
 
-pub fn constructor(_vm: &mut VM, _args: &[Value]) -> JSResult {
-    Err("sdf".into())
+pub fn constructor(vm: &mut VM, args: &[Value]) -> JSResult {
+    match args.len() {
+        0 => Ok(vm.ctx.new_Number(0.)),
+        _ => match args[0].ToNumber(vm) {
+            Err(e) => Err(e),
+            Ok(v) => {
+                if let Value::Number(n) = v {
+                    Ok(vm.ctx.new_Number(n))
+                } else {
+                    Err("Fatal Error: ToNumber didn't return Value::Number".into())
+                }
+            }
+        },
+    }
 }
 
 pub fn valueOf(vm: &mut VM, _args: &[Value]) -> JSResult {

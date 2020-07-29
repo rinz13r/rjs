@@ -37,7 +37,10 @@ impl Value {
             Value::Boolean(b) => Value::Number(if *b { 1. } else { 0. }),
             // TODO: impl the spec
             Value::String(s) => Value::Number(s.parse::<f64>().unwrap_or_default()),
-            Value::Object(o) => o.borrow().DefaultValue(PreferredType::Number.into(), vm)?,
+            Value::Object(o) => {
+                o.borrow()
+                    .DefaultValue(PreferredType::Number.into(), &self.unwrap_object(), vm)?
+            }
         })
     }
 
@@ -47,7 +50,7 @@ impl Value {
 
     pub fn ToPrimitive(&self, vm: &mut VM) -> JSResult {
         match self {
-            Value::Object(o) => o.borrow().DefaultValue(None, vm),
+            Value::Object(o) => o.borrow().DefaultValue(None, &self.unwrap_object(), vm),
             _ => Ok(self.clone()),
         }
     }
@@ -60,7 +63,11 @@ impl Value {
             Value::String(s) => Ok(s.clone().into()),
             Value::Object(o) => {
                 vm.push_this(self.clone());
-                let ret = o.borrow().DefaultValue(PreferredType::String.into(), vm);
+                let ret = o.borrow().DefaultValue(
+                    PreferredType::String.into(),
+                    &self.unwrap_object(),
+                    vm,
+                );
                 vm.pop_this();
                 ret
             }
@@ -95,6 +102,11 @@ impl std::ops::Add for Value {
     fn add(self, other: Self) -> Self {
         match (&self, &other) {
             (Value::Number(n1), Value::Number(n2)) => (n1 + n2).into(),
+            (Value::String(s1), Value::String(s2)) => {
+                let mut res = s1.clone ();
+                res.push_str (s2.as_str());
+                res.into()
+            },
             _ => Value::Undefined,
         }
     }

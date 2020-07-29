@@ -108,7 +108,7 @@ impl<'a> VM<'a> {
                     Some(v) => println!("{}", v),
                 },
                 Instruction::BinAdd => match (frm.datastack.pop(), frm.datastack.pop()) {
-                    (Some(v1), Some(v2)) => {
+                    (Some(v2), Some(v1)) => {
                         let res = v1.bin_add(v2, self)?;
                         if let Some(frm) = self.callstack.last_mut() {
                             frm.datastack.push(res);

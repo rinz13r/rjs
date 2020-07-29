@@ -171,31 +171,31 @@ impl<'a> CodeGen<'a> {
     }
     fn visit_expr(&mut self, expr: Expr) {
         match expr {
-            Expr::Lit(lit) => match lit {
-                Lit::Null => self.instrs.push(Instruction::LoadNull),
-                Lit::Number(std::borrow::Cow::Borrowed(b)) => {
-                    self.consts
-                        .push(b.parse::<f64>().unwrap_or_default().into());
-                    self.instrs
-                        .push(Instruction::LoadConst(self.consts.len() - 1));
+            Expr::Lit(lit) => {
+                self.instrs.push(Instruction::LoadConst(self.consts.len()));
+                match lit {
+                    Lit::Null => self.instrs.push(Instruction::LoadNull),
+                    Lit::Number(std::borrow::Cow::Borrowed(b)) => {
+                        self.consts
+                            .push(b.parse::<f64>().unwrap_or_default().into());
+                    }
+                    Lit::Number(std::borrow::Cow::Owned(b)) => {
+                        self.consts
+                            .push(b.parse::<f64>().unwrap_or_default().into());
+                    }
+                    Lit::String(StringLit::Double(std::borrow::Cow::Owned(b))) => {
+                        self.consts.push(Value::String(b.to_string()));
+                    }
+                    Lit::String(StringLit::Double(std::borrow::Cow::Borrowed(b))) => {
+                        self.consts.push(Value::String(b.to_string()));
+                    }
+                    Lit::Boolean(b) => {
+                        self.instrs.pop().expect("Instruction underflow");
+                        self.instrs.push(Instruction::LoadBool(b));
+                    }
+                    _ => panic!("No support for expr: {:?} yet", lit),
                 }
-                Lit::Number(std::borrow::Cow::Owned(b)) => {
-                    self.consts
-                        .push(b.parse::<f64>().unwrap_or_default().into());
-                    self.instrs
-                        .push(Instruction::LoadConst(self.consts.len() - 1));
-                }
-                Lit::String(StringLit::Double(std::borrow::Cow::Owned(b))) => {
-                    self.consts.push(Value::String(b.to_string()));
-                }
-                Lit::String(StringLit::Double(std::borrow::Cow::Borrowed(b))) => {
-                    self.consts.push(Value::String(b.to_string()));
-                }
-                Lit::Boolean(b) => {
-                    self.instrs.push(Instruction::LoadBool(b));
-                }
-                _ => panic!("No support for expr: {:?} yet", lit),
-            },
+            }
             Expr::Binary(BinaryExpr {
                 operator,
                 left,
