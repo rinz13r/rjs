@@ -54,12 +54,18 @@ pub fn constructor(vm: &mut VM, args: &[Value]) -> JSResult {
     }
 }
 
-pub fn valueOf(vm: &mut VM, _args: &[Value]) -> JSResult {
-    let this = vm.get_this();
-    Ok(extract_number!(this).value.into())
-}
+use crate::js_impl;
+use crate::vm::context::Context;
 
-pub fn toString(vm: &mut VM, _args: &[Value]) -> JSResult {
-    let this = vm.get_this();
-    Ok(extract_number!(this).value.to_string().into())
+js_impl! {
+    #[prop(name=valueOf,length=1)]
+    fn valueOf(vm: &mut VM, _args: &[Value]) -> JSResult {
+        let this = vm.get_this();
+        Ok(extract_number!(this).value.into())
+    },
+    #[prop(name=toString, length=1)]
+    fn toString(vm: &mut VM, _args: &[Value]) -> JSResult {
+        let this = vm.get_this();
+        Ok(extract_number!(this).value.to_string().into())
+    }
 }

@@ -169,3 +169,29 @@ impl Objectable for Object {
         }
     }
 }
+
+#[macro_export]
+macro_rules! js_impl {
+    (
+        $(
+            #[prop(name=$name:ident, length=$l:expr)] $x: item
+        )
+        ,
+    *) => {
+        pub fn get_prototype_props (ctx: &Context) -> JSDict {
+            let mut props = JSDict::new ();
+        $(
+            $x
+            let prop = Property {
+                value: ctx.new_BuiltinFunction(stringify!($name), $name, 0),
+                read_only: true,
+                dont_enum: true,
+                internal: true,
+                dont_delete: true,
+            };
+            props.insert (stringify!($name).to_string(), prop);
+        )*
+            props
+        }
+    }
+}

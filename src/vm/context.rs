@@ -38,9 +38,9 @@ impl Context {
             String_prototype,
             String_function,
         };
+        ctx.Number_prototype.borrow_mut().props = number::get_prototype_props(&ctx);
         ctx.init_Object_prototype();
-        ctx.init_Number_prototype();
-        ctx.init_String_prototype();
+        ctx.String_prototype.borrow_mut().props = string::get_prototype_props(&ctx);
         ctx
     }
 
@@ -143,18 +143,6 @@ impl Context {
 }
 
 impl Context {
-    fn init_Number_prototype(&mut self) {
-        fn insert_prop(prototype: &mut GcObject, key: String, value: Value) {
-            prototype
-                .borrow_mut()
-                .props
-                .insert(key, Property::new(value));
-        }
-        let valueOf = self.new_BuiltinFunction("valueOf", number::valueOf, 0);
-        let toString = self.new_BuiltinFunction("toString", number::toString, 0);
-        insert_prop(&mut self.Number_prototype, "valueOf".to_string(), valueOf);
-        insert_prop(&mut self.Number_prototype, "toString".to_string(), toString);
-    }
     fn init_Object_prototype(&mut self) {
         fn insert_prop(prototype: &mut GcObject, key: String, value: Value) {
             prototype
@@ -166,18 +154,6 @@ impl Context {
         let toString = self.new_BuiltinFunction("toString", object::toString, 0);
         insert_prop(&mut self.Object_prototype, "valueOf".to_string(), valueOf);
         insert_prop(&mut self.Object_prototype, "toString".to_string(), toString);
-    }
-    fn init_String_prototype(&mut self) {
-        fn insert_prop(prototype: &mut GcObject, key: String, value: Value) {
-            prototype
-                .borrow_mut()
-                .props
-                .insert(key, Property::new(value));
-        }
-        let valueOf = self.new_BuiltinFunction("valueOf", string::valueOf, 0);
-        let toString = self.new_BuiltinFunction("toString", string::toString, 0);
-        insert_prop(&mut self.String_prototype, "valueOf".to_string(), valueOf);
-        insert_prop(&mut self.String_prototype, "toString".to_string(), toString);
     }
 }
 

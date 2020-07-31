@@ -40,20 +40,47 @@ pub fn constructor(vm: &mut VM, args: &[Value]) -> JSResult {
     }
 }
 
-pub fn toString(vm: &mut VM, _args: &[Value]) -> JSResult {
-    let obj = vm.get_this().as_object(vm.ctx);
-    let ref payload = obj.borrow().payload;
-    match payload {
-        ObjectPayload::String(s) => Ok(s.valueOf()),
-        _ => Err("RuntimeError: `this` is not a String object".into()),
-    }
-}
+use crate::js_impl;
+use crate::vm::context::Context;
 
-pub fn valueOf(vm: &mut VM, _args: &[Value]) -> JSResult {
-    let obj = vm.get_this().as_object(vm.ctx);
-    let ref payload = obj.borrow().payload;
-    match payload {
-        ObjectPayload::String(s) => Ok(s.valueOf()),
-        _ => Err("RuntimeError: `this` is not a String object".into()),
+js_impl! {
+    #[prop(name=toString, length=1)]
+    fn toString(vm: &mut VM, _args: &[Value]) -> JSResult {
+        let obj = vm.get_this().as_object(vm.ctx);
+        let ref payload = obj.borrow().payload;
+        match payload {
+            ObjectPayload::String(s) => Ok(s.valueOf()),
+            _ => Err("RuntimeError: `this` is not a String object".into()),
+        }
+    },
+
+    #[prop(name=valueOf, length=1)]
+    fn valueOf(vm: &mut VM, _args: &[Value]) -> JSResult {
+        let obj = vm.get_this().as_object(vm.ctx);
+        let ref payload = obj.borrow().payload;
+        match payload {
+            ObjectPayload::String(s) => Ok(s.valueOf()),
+            _ => Err("RuntimeError: `this` is not a String object".into()),
+        }
+    },
+
+    #[prop(name=toLowerCase, length=1)]
+    fn toLowerCase(vm: &mut VM, _args: &[Value]) -> JSResult {
+        let obj = vm.get_this().as_object(vm.ctx);
+        let ref payload = obj.borrow().payload;
+        match payload {
+            ObjectPayload::String(String{ref value}) => Ok(value.to_lowercase ().into()),
+            _ => Err("RuntimeError: `this` is not a String object".into()),
+        }
+    },
+
+    #[prop(name=toUpperCase, length=1)]
+    fn toUpperCase(vm: &mut VM, _args: &[Value]) -> JSResult {
+        let obj = vm.get_this().as_object(vm.ctx);
+        let ref payload = obj.borrow().payload;
+        match payload {
+            ObjectPayload::String(String{ref value}) => Ok(value.to_uppercase ().into()),
+            _ => Err("RuntimeError: `this` is not a String object".into()),
+        }
     }
 }
