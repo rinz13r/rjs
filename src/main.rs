@@ -20,7 +20,7 @@ fn test_new() {
     let ctx = Context::new();
     let code = gen_code(js, &ctx);
     let mut vm = VM::new(code, &ctx);
-    vm.run();
+    vm.run().unwrap();
 }
 
 fn main() {
@@ -35,7 +35,6 @@ fn main() {
     };
     let ctx = Context::new();
     let code = gen_code(js, &ctx);
-    dbg!(&code.instrs);
     let mut vm = VM::new(code, &ctx);
-    vm.run();
+    vm.run().unwrap();
 }

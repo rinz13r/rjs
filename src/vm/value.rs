@@ -103,10 +103,10 @@ impl std::ops::Add for Value {
         match (&self, &other) {
             (Value::Number(n1), Value::Number(n2)) => (n1 + n2).into(),
             (Value::String(s1), Value::String(s2)) => {
-                let mut res = s1.clone ();
-                res.push_str (s2.as_str());
+                let mut res = s1.clone();
+                res.push_str(s2.as_str());
                 res.into()
-            },
+            }
             _ => Value::Undefined,
         }
     }

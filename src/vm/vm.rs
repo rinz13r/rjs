@@ -70,21 +70,17 @@ impl<'a> VM<'a> {
             .insert("String".to_string(), vm.ctx.String_function.clone().into());
         vm.global_scope.insert(
             "print".to_string(),
-            vm.ctx
-                .new_PrimitiveFunction("print", builtin_print, None, 0)
-                .into(),
+            vm.ctx.new_BuiltinFunction("print", builtin_print, 0).into(),
         );
         vm
     }
 
     // TODO: return Result to indicate success or uncaught expcetion
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> JSResult {
         while self.callstack.len() > 0 {
-            match self.exec_top_frame() {
-                Err(e) => panic!(e.to_string()),
-                _ => (),
-            }
+            self.exec_top_frame()?;
         }
+        Ok(Value::default())
     }
     pub fn exec_top_frame(&mut self) -> JSResult {
         while let Some(frm) = self.callstack.last_mut() {
@@ -141,10 +137,11 @@ impl<'a> VM<'a> {
                     }
                     let res = v.as_object(self.ctx).borrow().Call(self, &arguments[..]);
                     if let Some(frm) = self.callstack.last_mut() {
-                        match &res {
-                            Ok(val) => frm.datastack.push(val.clone()),
-                            Err(_) => return res,
-                        };
+                        frm.datastack.push(res?);
+                        // match &res {
+                        //     Ok(val) => frm.datastack.push(val.clone()),
+                        //     Err(_) => return res,
+                        // };
                     };
                 }
                 Instruction::LoadName(idx) => {
@@ -185,10 +182,11 @@ impl<'a> VM<'a> {
                     }
                     let res = f.as_object(self.ctx).borrow().Construct(self, &args);
                     if let Some(frm) = self.callstack.last_mut() {
-                        match &res {
-                            Ok(val) => frm.datastack.push(val.clone()),
-                            Err(_) => return res,
-                        }
+                        frm.datastack.push(res?);
+                        // match &res {
+                        //     Ok(val) => frm.datastack.push(val.clone()),
+                        //     Err(_) => return res,
+                        // }
                     };
                 }
                 Instruction::LoadProperty => {

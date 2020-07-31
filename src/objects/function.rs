@@ -2,13 +2,50 @@ use super::*;
 use crate::vm::code::Code;
 use std::rc::Rc;
 
+#[derive(Trace, Finalize)]
+struct ConstructorMetaData {
+    #[unsafe_ignore_trace]
+    constructor: RJSFunc,
+    prototype: GcObject,
+}
+
+impl std::fmt::Debug for ConstructorMetaData {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "constructor_metadata")
+    }
+}
+
 #[derive(Trace, Finalize, Debug)]
 pub struct Function {
     name: String,
-    #[unsafe_ignore_trace]
-    code: Rc<Code>, // refcnt is enough
     length: usize,
+    payload: FunctionPayload,
+}
+
+#[derive(Trace, Finalize)]
+enum FunctionPayload {
+    UserDefined(UserFunctionData),
+    Primitive(PrimitiveFunctionData),
+}
+
+#[derive(Trace, Finalize, Debug)]
+struct UserFunctionData {
+    #[unsafe_ignore_trace]
+    code: Rc<Code>,
     prototype: GcObject,
+}
+
+#[derive(Trace, Finalize)]
+struct PrimitiveFunctionData {
+    #[unsafe_ignore_trace]
+    func: RJSFunc,
+    constructor_metadata: Option<ConstructorMetaData>,
+}
+
+impl std::fmt::Debug for FunctionPayload {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "function data")
+    }
 }
 
 #[derive(Trace, Finalize)]
@@ -23,64 +60,81 @@ pub struct PrimitiveFunction {
 }
 
 impl Function {
-    pub fn new(code: Rc<Code>, name: String, length: usize, prototype: GcObject) -> Self {
-        Self {
-            code,
-            name,
-            length,
-            prototype,
-        }
-    }
-
-    pub fn Call(&self, vm: &mut VM, args: &[Value]) -> JSResult {
-        vm.call_code(self.code.clone(), self.length, args)
-    }
-    // TODO:
-    pub fn Construct(&self, vm: &mut VM, args: &[Value]) -> JSResult {
-        let this = vm.ctx.new_Object(Some(self.prototype.clone()));
-        vm.push_this(this.clone());
-        this.unwrap_object().borrow_mut().__proto__ = self.prototype.clone().into();
-        match self.Call(vm, args) {
-            Ok(_) => (),
-            Err(msg) => return Err(msg),
-        }
-        Ok(vm.pop_this())
-    }
-}
-
-impl PrimitiveFunction {
-    pub fn new(
-        name: &'static str,
-        func: RJSFunc,
-        constructor: Option<RJSFunc>,
+    pub fn new_userdefined(
+        code: Rc<Code>,
+        name: String,
         length: usize,
         prototype: GcObject,
     ) -> Self {
         Self {
             name,
-            func,
-            constructor,
             length,
-            prototype,
+            payload: FunctionPayload::UserDefined(UserFunctionData { code, prototype }),
         }
     }
+
     pub fn Call(&self, vm: &mut VM, args: &[Value]) -> JSResult {
-        let func = self.func;
-        func(vm, args)
+        match &self.payload {
+            FunctionPayload::Primitive(PrimitiveFunctionData { func, .. }) => func(vm, args),
+            FunctionPayload::UserDefined(UserFunctionData { code, .. }) => {
+                vm.call_code(code.clone(), self.length, args)
+            }
+        }
     }
-    // PrimitiveFunction's constructors will build the object themselves
+    // TODO:
     pub fn Construct(&self, vm: &mut VM, args: &[Value]) -> JSResult {
-        if let Some(cons) = self.constructor {
-            cons(vm, args)
-        } else {
-            Err(format!("{} is not a Constructor", self.name).into())
+        match &self.payload {
+            FunctionPayload::Primitive(PrimitiveFunctionData {
+                constructor_metadata,
+                ..
+            }) => {
+                if let Some(constructor_metadata) = constructor_metadata {
+                    let cons = constructor_metadata.constructor;
+                    cons(vm, args)
+                } else {
+                    Err("Object is not constructible".into())
+                }
+            }
+            FunctionPayload::UserDefined(UserFunctionData { prototype, .. }) => {
+                let this = vm.ctx.new_Object(Some(prototype.clone()));
+                vm.push_this(this.clone());
+                this.unwrap_object().borrow_mut().__proto__ = prototype.clone().into();
+                self.Call(vm, args)?;
+                Ok(vm.pop_this())
+            }
         }
     }
 }
 
-impl std::fmt::Debug for PrimitiveFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "builtin function: {}", self.name)
+impl Function {
+    pub fn new_primitive(
+        name: String,
+        func: RJSFunc,
+        constructor: RJSFunc,
+        length: usize,
+        prototype: GcObject,
+    ) -> Self {
+        Self {
+            name,
+            payload: FunctionPayload::Primitive(PrimitiveFunctionData {
+                func,
+                constructor_metadata: Some(ConstructorMetaData {
+                    constructor,
+                    prototype,
+                }),
+            }),
+            length,
+        }
+    }
+    pub fn new_builtin(name: String, func: RJSFunc, length: usize) -> Self {
+        Self {
+            name,
+            payload: FunctionPayload::Primitive(PrimitiveFunctionData {
+                func,
+                constructor_metadata: None,
+            }),
+            length,
+        }
     }
 }
 

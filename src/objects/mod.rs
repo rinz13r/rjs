@@ -49,7 +49,6 @@ pub enum ObjectPayload {
     Number(number::Number),
     String(string::String),
     Function(function::Function),
-    PrimitiveFunction(function::PrimitiveFunction),
     Regular(object::Regular),
 }
 
@@ -120,14 +119,12 @@ impl Objectable for Object {
         match &self.payload {
             // ObjectPayload::PrimFunction(o) => o.Call(vm, args),
             ObjectPayload::Function(o) => o.Construct(vm, args),
-            ObjectPayload::PrimitiveFunction(o) => o.Construct(vm, args),
             _ => Err("Object not constructible".into()),
         }
     }
     fn Call(&self, vm: &mut VM, args: &[Value]) -> JSResult {
         match &self.payload {
             ObjectPayload::Function(o) => o.Call(vm, args),
-            ObjectPayload::PrimitiveFunction(o) => o.Call(vm, args),
             _ => Err("Object not callable".into()),
         }
     }
